@@ -82,20 +82,30 @@ without PayPal tools.
 
 ## Run
 
-**Web app (API + UI):**
+**Flow dashboard (React + AG Studio, Phase 0):**
 
 ```bash
-npm run dev     # watch mode
-# or
-npm start
+npm install
+cp web/.env.example web/.env   # add your VITE_AG_STUDIO_LICENSE key
+
+# dev: Express API + Vite dev server (two terminals)
+npm run dev:server             # http://localhost:3000  (API)
+npm run dev:web                # http://localhost:5173  (UI, proxies /api)
+
+# or production-style: build the UI and let Express serve it
+npm run build:web
+npm start                      # http://localhost:3000
 ```
 
-Open http://localhost:3000 and use the two tabs:
+Open the app, click **Edit / Ask AI**, and ask the assistant e.g. *"Add a column
+chart of paid invoice revenue by month"* — it builds the widget on the AG Studio
+canvas, powered by Amazon Bedrock. The legacy chat/invoices UI remains at `/legacy`.
 
-- **Chat** — talk to the agent (create invoices, look things up, etc.). The dot
-  next to the title shows whether PayPal is configured.
-- **Invoices** — a live AG Grid of your PayPal invoices. Select a row and click
-  **Draft nudge ✨** to have the AI write a friendly payment reminder.
+**Legacy agent UI (chat + invoices grid):**
+
+```bash
+npm start                      # then open http://localhost:3000/legacy
+```
 
 **CLI:**
 

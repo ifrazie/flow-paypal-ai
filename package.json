@@ -7,14 +7,22 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev:server": "tsx watch src/server.ts",
+    "dev:web": "vite web",
+    "build:web": "vite build web",
+    "preview:web": "vite preview web",
     "start": "tsx src/server.ts",
     "agent": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.709.0",
+    "@bryntum/gantt": "npm:@bryntum/gantt-trial@^7.3.7",
+    "@bryntum/gantt-react": "^7.3.7",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@strands-agents/sdk": "^1.0.0",
+    "ag-studio": "^3.0.0",
+    "ag-studio-react": "^3.0.0",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
     "zod": "^4.5.4"
@@ -22,7 +30,11 @@
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
   }
 }

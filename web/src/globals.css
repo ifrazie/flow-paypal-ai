@@ -1,0 +1,105 @@
+:root {
+  /* PayPal-flavored design tokens consumed by the AG Studio theme (web/src/studio/theme.ts). */
+  --pp-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --pp-ink: #0a0f1c;
+  --pp-navy: #003087; /* PayPal dark blue */
+  --pp-blue: #0070ba; /* PayPal blue */
+  --pp-muted: #6b7280;
+  --pp-surface: #ffffff;
+  --pp-canvas: #f4f6fb;
+  --pp-border: #e3e8ef;
+  --pp-gridline: #eef1f6;
+  --pp-highlight: #e8f1fb;
+
+  /* Chart palette */
+  --pp-chart-1: #0070ba;
+  --pp-chart-2: #003087;
+  --pp-chart-3: #009cde;
+  --pp-chart-4: #64d2ff;
+  --pp-chart-5: #22c55e;
+  --pp-chart-6: #f59e0b;
+  --pp-chart-7: #ef4444;
+  --pp-chart-8: #a855f7;
+  --pp-chart-9: #14b8a6;
+  --pp-chart-10: #e879f9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--pp-font);
+  color: var(--pp-ink);
+  background: var(--pp-canvas);
+}
+
+.flow-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.flow-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: var(--pp-navy);
+  color: #fff;
+}
+
+.flow-header h1 {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.flow-header .tag {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.flow-mode {
+  margin-left: auto;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.flow-mode:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.flow-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.flow-loading,
+.flow-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--pp-muted);
+  font-size: 15px;
+  padding: 24px;
+  text-align: center;
+}
+
+.flow-error {
+  color: #b91c1c;
+}

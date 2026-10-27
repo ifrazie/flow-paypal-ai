@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .env
+web/.env
+web/dist/
 *.log
 .DS_Store
 .playwright-mcp/

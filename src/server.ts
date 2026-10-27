@@ -1,27 +1,65 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import { assertBedrockCredentials, config, hasPaypalAuth } from "./config.js";
 import { getSession, resetSession } from "./sessions.js";
 import { streamUiEvents } from "./events.js";
 import { listInvoices, type InvoiceRow } from "./paypalRest.js";
 import { draftNudge } from "./nudge.js";
+import { getDashboardData } from "./dashboard/data.js";
+import { runStudioTurn } from "./studioLlm.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const webDist = join(__dirname, "..", "web", "dist");
 
 assertBedrockCredentials();
 
 const app = express();
 app.use(express.json());
-app.use(express.static(join(__dirname, "..", "public")));
+// Built React app (Flow dashboard). Legacy vanilla UI stays available under /legacy.
+app.use(express.static(webDist));
+app.use("/legacy", express.static(join(__dirname, "..", "public")));
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, paypalTools: hasPaypalAuth() });
 });
 
-// Live PayPal invoices for the dashboard grid.
-app.get("/api/invoices", async (_req, res) => {
+// AG Studio AI assistant turn: the browser's thin Bedrock adapter POSTs an
+// AgLlmRequest here; we run one Bedrock Converse turn and stream AG-UI events
+// back as ndjson. Keeps AWS credentials server-side.
+app.post("/api/ai/turn", async (req, res) => {
+  res.setHeader("Content-Type", "application/x-ndjson");
+  res.setHeader("Cache-Control", "no-cache");
+  const controller = new AbortController();
+  // Abort the Bedrock call only if the client disconnects before we finish.
+  res.on("close", () => {
+    if (!res.writableEnded) controller.abort();
+  });
   try {
+    for await (const line of runStudioTurn(req.body, controller.signal)) {
+      res.write(`${JSON.stringify(line)}\n`);
+    }
+  } catch (err) {
+    res.write(`${JSON.stringify({ k: "error", message: err instanceof Error ? err.message : String(err) })}\n`);
+  } finally {
+    res.end();
+  }
+});
+
+// Full dashboard dataset (invoices, transactions, products, plans, balances → flat rows)
+// for the AG Studio data engine.
+app.get("/api/dashboard-data", async (_req, res) => {
+  try {
+    const data = await getDashboardData();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Live PayPal invoices for the dashboard grid.
+app.get("/api/invoices", async (_req, res) => {  try {
     const invoices = await listInvoices();
     res.json({ invoices });
   } catch (err) {
@@ -92,9 +130,17 @@ app.post("/api/chat/stream", async (req, res) => {
   }
 });
 
+// SPA fallback: serve the React app's index.html for any non-API GET route.
+app.use((req, res, next) => {
+  if (req.method !== "GET" || req.path.startsWith("/api")) return next();
+  const indexHtml = join(webDist, "index.html");
+  if (existsSync(indexHtml)) return res.sendFile(indexHtml);
+  next();
+});
+
 app.listen(config.server.port, () => {
-  console.log(`\n  Agent UI:  http://localhost:${config.server.port}`);
+  console.log(`\n  Flow UI:  http://localhost:${config.server.port}`);
   console.log(
-    `  PayPal tools: ${hasPaypalAuth() ? "enabled" : "disabled (set PAYPAL_CLIENT_ID/PAYPAL_SECRET)"}\n`,
+    `  PayPal:   ${hasPaypalAuth() ? "enabled" : "disabled (set PAYPAL_CLIENT_ID/PAYPAL_SECRET)"}\n`,
   );
 });
