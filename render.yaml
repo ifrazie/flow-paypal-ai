@@ -1,0 +1,30 @@
+# Render blueprint — https://render.com/docs/blueprint-spec
+# Deploys the agent's Express server as a web service.
+# Set the secret env vars (marked sync:false) in the Render dashboard; never commit them.
+services:
+  - type: web
+    name: paypal-ai-agent
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Bedrock (model provider)
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: us-east-1
+      # Optional: pin a Bedrock model
+      # - key: BEDROCK_MODEL_ID
+      #   sync: false
+      # PayPal sandbox app credentials (a fresh MCP token is minted from these)
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_SECRET
+        sync: false

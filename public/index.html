@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PayPal Agent</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💸</text></svg>"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <!-- AG Grid Community (free) via CDN — keeps the no-build, static UI -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.4/styles/ag-grid.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.4/styles/ag-theme-quartz.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.4/dist/ag-grid-community.min.js"></script>
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1>PayPal Agent</h1>
+        <span id="status" class="status" title="PayPal tool status"></span>
+        <nav class="tabs">
+          <button id="tab-chat" class="tab active" type="button" data-view="chat">Chat</button>
+          <button id="tab-invoices" class="tab" type="button" data-view="invoices">
+            Invoices
+          </button>
+        </nav>
+        <button id="reset" class="reset" type="button" title="Start a new conversation">
+          New chat
+        </button>
+      </header>
+
+      <!-- Chat view -->
+      <section id="view-chat" class="view">
+        <div id="log" class="log" aria-live="polite"></div>
+        <form id="form" class="composer">
+          <input
+            id="input"
+            class="input"
+            type="text"
+            autocomplete="off"
+            placeholder="e.g. Create a $25 invoice for jane@example.com"
+          />
+          <button id="send" class="send" type="submit">Send</button>
+        </form>
+      </section>
+
+      <!-- Invoices dashboard view -->
+      <section id="view-invoices" class="view hidden">
+        <div class="invoices-bar">
+          <div>
+            <strong>Invoices</strong>
+            <span class="muted-sm">Select a row, then draft a friendly AI reminder.</span>
+          </div>
+          <div class="invoices-actions">
+            <button id="nudge" class="send" type="button" disabled>Draft nudge ✨</button>
+            <button id="refresh" class="reset" type="button">Refresh</button>
+          </div>
+        </div>
+        <div id="grid" class="ag-theme-quartz grid"></div>
+      </section>
+    </main>
+
+    <!-- Nudge result panel -->
+    <div id="nudge-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-title">Friendly reminder draft</div>
+        <div id="nudge-meta" class="muted-sm"></div>
+        <textarea id="nudge-text" class="nudge-text" rows="6"></textarea>
+        <div class="modal-actions">
+          <button id="nudge-copy" class="send" type="button">Copy</button>
+          <button id="nudge-close" class="reset" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
