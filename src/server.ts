@@ -7,6 +7,7 @@ import { getSession, resetSession } from "./sessions.js";
 import { streamUiEvents } from "./events.js";
 import { listInvoices, type InvoiceRow } from "./paypalRest.js";
 import { draftNudge } from "./nudge.js";
+import { resolvePaypalToken } from "./paypalAuth.js";
 import { getDashboardData } from "./dashboard/data.js";
 import { buildTimeline } from "./dashboard/projects.js";
 import { paidInvoiceIds } from "./dashboard/paidOverrides.js";
@@ -46,6 +47,62 @@ app.post("/api/ai/turn", async (req, res) => {
     res.write(`${JSON.stringify({ k: "error", message: err instanceof Error ? err.message : String(err) })}\n`);
   } finally {
     res.end();
+  }
+});
+
+// Collections: AI-draft a friendly reminder for a specific overdue invoice.
+app.post("/api/collections/draft", async (req, res) => {
+  const invoiceId = typeof req.body?.invoiceId === "string" ? req.body.invoiceId : "";
+  if (!invoiceId) {
+    res.status(400).json({ error: "Body must include 'invoiceId'." });
+    return;
+  }
+  try {
+    const data = await getDashboardData();
+    const inv = data.invoices.find((i) => i.id === invoiceId);
+    if (!inv) {
+      res.status(404).json({ error: "Invoice not found." });
+      return;
+    }
+    const cust = data.customers.find((c) => c.id === inv.customerId);
+    const message = await draftNudge({
+      id: inv.id,
+      invoiceNumber: inv.number,
+      recipient: (cust?.name as string) || (inv.customerId as string),
+      amount: inv.total,
+      currency: inv.currency,
+      status: inv.status,
+      date: inv.invoiceDate ?? "",
+    });
+    res.json({ message, invoiceNumber: inv.number });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Collections: send a reminder for an invoice via PayPal (the approved action).
+app.post("/api/invoices/:id/remind", async (req, res) => {
+  const id = req.params.id;
+  const note = typeof req.body?.note === "string" ? req.body.note : "Just a friendly reminder about your invoice.";
+  try {
+    const token = await resolvePaypalToken();
+    if (!token) {
+      res.status(503).json({ error: "PayPal not configured." });
+      return;
+    }
+    const r = await fetch(`https://api-m.sandbox.paypal.com/v2/invoicing/invoices/${id}/remind`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ subject: "A friendly reminder about your invoice", note, send_to_recipient: true }),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      res.status(502).json({ error: `PayPal remind ${r.status}: ${text.slice(0, 200)}` });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 

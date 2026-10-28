@@ -45,6 +45,9 @@ export function DeliveryView() {
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<{ invoiceId: string; invoiceNumber: string; text: string } | null>(null);
+  const [draftBusy, setDraftBusy] = useState(false);
+  const [sentNote, setSentNote] = useState<string | null>(null);
   const ganttRef = useRef<any>(null);
 
   const load = useCallback(async () => {
@@ -84,6 +87,55 @@ export function DeliveryView() {
     }
   };
 
+  const selectedOverdue = () => {
+    const sel = document.getElementById("pay-select") as HTMLSelectElement | null;
+    const value = sel?.value;
+    if (!value) return null;
+    const t = overdue.find((o) => o.invoiceId === value);
+    return t ? { invoiceId: value, invoiceNumber: t.invoiceNumber ?? "" } : null;
+  };
+
+  const draftReminder = async () => {
+    const target = selectedOverdue();
+    if (!target) return;
+    setDraftBusy(true);
+    try {
+      const res = await fetch("/api/collections/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceId: target.invoiceId }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      setDraft({ invoiceId: target.invoiceId, invoiceNumber: target.invoiceNumber, text: body.message });
+    } catch (err) {
+      alert(`Could not draft a reminder: ${err}`);
+    } finally {
+      setDraftBusy(false);
+    }
+  };
+
+  const sendReminder = async () => {
+    if (!draft) return;
+    setDraftBusy(true);
+    try {
+      const res = await fetch(`/api/invoices/${draft.invoiceId}/remind`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: draft.text }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      setSentNote(`Reminder sent for ${draft.invoiceNumber}.`);
+      setDraft(null);
+      setTimeout(() => setSentNote(null), 4000);
+    } catch (err) {
+      alert(`Could not send the reminder: ${err}`);
+    } finally {
+      setDraftBusy(false);
+    }
+  };
+
   const project = useMemo(
     () => ({ tasksData: model?.tasks ?? [], dependenciesData: model?.dependencies ?? [] }),
     [model],
@@ -112,6 +164,14 @@ export function DeliveryView() {
           </select>
           <button
             type="button"
+            className="pay-btn ghost"
+            disabled={draftBusy || overdue.length === 0}
+            onClick={draftReminder}
+          >
+            {draftBusy ? "Drafting…" : "Draft reminder ✨"}
+          </button>
+          <button
+            type="button"
             className="pay-btn"
             disabled={busy}
             onClick={() => {
@@ -123,6 +183,7 @@ export function DeliveryView() {
           </button>
         </div>
       </div>
+      {sentNote && <div className="delivery-toast">{sentNote}</div>}
       <div className="delivery-gantt">
         <BryntumGantt
           key={version}
@@ -135,6 +196,31 @@ export function DeliveryView() {
           dependencyIdField="id"
         />
       </div>
+
+      {draft && (
+        <div className="modal" onClick={() => setDraft(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">AI reminder · {draft.invoiceNumber}</div>
+            <p className="modal-sub">
+              Review and edit the draft. Nothing is sent until you approve.
+            </p>
+            <textarea
+              className="modal-text"
+              rows={7}
+              value={draft.text}
+              onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+            />
+            <div className="modal-actions">
+              <button type="button" className="pay-btn ghost" onClick={() => setDraft(null)}>
+                Cancel
+              </button>
+              <button type="button" className="pay-btn" disabled={draftBusy} onClick={sendReminder}>
+                {draftBusy ? "Sending…" : "Approve & send reminder"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
