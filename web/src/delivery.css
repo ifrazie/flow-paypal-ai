@@ -1,0 +1,88 @@
+.delivery {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.delivery-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--pp-surface);
+  border-bottom: 1px solid var(--pp-border);
+}
+
+.delivery-hint {
+  font-size: 13px;
+  color: var(--pp-muted);
+}
+
+.delivery-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.delivery-actions select {
+  padding: 7px 10px;
+  border: 1px solid var(--pp-border);
+  border-radius: 8px;
+  font: inherit;
+  background: #fff;
+  color: var(--pp-ink);
+}
+
+.pay-btn {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--pp-blue);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pay-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.delivery-gantt {
+  flex: 1;
+  min-height: 0;
+}
+
+/* status pills in the grid column */
+.pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.pill-paid {
+  background: #14532d;
+  color: #bbf7d0;
+}
+.pill-overdue {
+  background: #450a0a;
+  color: #fecaca;
+}
+.pill-pending {
+  background: #78350f;
+  color: #fde68a;
+}
+
+/* blocked phase emphasis */
+.flow-blocked .b-gantt-task {
+  opacity: 0.85;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(239, 68, 68, 0.25),
+    rgba(239, 68, 68, 0.25) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}

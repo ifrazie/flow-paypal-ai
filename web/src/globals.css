@@ -68,9 +68,35 @@ body {
 }
 
 .flow-nav {
-  margin-left: auto;
+  margin-left: 20px;
   display: flex;
   gap: 4px;
+}
+
+.flow-pages {
+  margin-left: auto;
+}
+
+.flow-top {
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.flow-top:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.flow-top.active {
+  background: #fff;
+  color: var(--pp-navy);
+  border-color: #fff;
 }
 
 .flow-tab {

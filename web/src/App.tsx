@@ -11,6 +11,7 @@ import { dashboardReport } from "./studio/initial-report";
 import { agStudioPayPalTheme } from "./studio/theme";
 import { buildAi } from "./studio/ai";
 import type { DashboardData } from "./studio/types";
+import { DeliveryView } from "./DeliveryView";
 
 if (import.meta.env.DEV) {
   enableStudioDevValidations();
@@ -25,7 +26,10 @@ const PAGE_LABELS: Record<string, string> = {
   catalogue: "Catalogue",
 };
 
+type View = "dashboard" | "delivery";
+
 export function App() {
+  const [view, setView] = useState<View>("dashboard");
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AgStudioMode>("view");
@@ -60,35 +64,58 @@ export function App() {
       <header className="flow-header">
         <h1>Flow</h1>
         <span className="tag">PayPal money copilot</span>
+
         <nav className="flow-nav">
-          {dashboardReport.pages.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`flow-tab${p.id === activePage ? " active" : ""}`}
-              onClick={() => selectPage(p.id)}
-            >
-              {PAGE_LABELS[p.id] ?? p.id}
-            </button>
-          ))}
+          <button
+            type="button"
+            className={`flow-top${view === "dashboard" ? " active" : ""}`}
+            onClick={() => setView("dashboard")}
+          >
+            Dashboard
+          </button>
+          <button
+            type="button"
+            className={`flow-top${view === "delivery" ? " active" : ""}`}
+            onClick={() => setView("delivery")}
+          >
+            Delivery
+          </button>
         </nav>
-        <button
-          className="flow-mode"
-          type="button"
-          onClick={() => setMode((m) => (m === "view" ? "edit" : "view"))}
-        >
-          {mode === "view" ? "Edit / Ask AI" : "Done"}
-        </button>
+
+        {view === "dashboard" && (
+          <>
+            <nav className="flow-nav flow-pages">
+              {dashboardReport.pages.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`flow-tab${p.id === activePage ? " active" : ""}`}
+                  onClick={() => selectPage(p.id)}
+                >
+                  {PAGE_LABELS[p.id] ?? p.id}
+                </button>
+              ))}
+            </nav>
+            <button
+              className="flow-mode"
+              type="button"
+              onClick={() => setMode((m) => (m === "view" ? "edit" : "view"))}
+            >
+              {mode === "view" ? "Edit / Ask AI" : "Done"}
+            </button>
+          </>
+        )}
       </header>
+
       <div className="flow-body">
-        {error ? (
+        {view === "delivery" ? (
+          <DeliveryView />
+        ) : error ? (
           <div className="flow-error">Could not load dashboard: {error}</div>
         ) : !data || !studioData ? (
           <div className="flow-loading">Loading PayPal data…</div>
         ) : !hasData(data) ? (
-          <div className="flow-loading">
-            No PayPal data yet. Create some invoices, then refresh.
-          </div>
+          <div className="flow-loading">No PayPal data yet. Run `npm run seed`, then refresh.</div>
         ) : (
           <AgStudioProvider licenseKey={LICENSE_KEY} modules={[AgStudioAiModule]}>
             <AgStudio

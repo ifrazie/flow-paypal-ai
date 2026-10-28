@@ -8,6 +8,8 @@ import { streamUiEvents } from "./events.js";
 import { listInvoices, type InvoiceRow } from "./paypalRest.js";
 import { draftNudge } from "./nudge.js";
 import { getDashboardData } from "./dashboard/data.js";
+import { buildTimeline } from "./dashboard/projects.js";
+import { paidInvoiceIds } from "./dashboard/paidOverrides.js";
 import { runStudioTurn } from "./studioLlm.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +58,40 @@ app.get("/api/dashboard-data", async (_req, res) => {
   } catch (err) {
     res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+// Client-delivery timeline (Bryntum Gantt data): phases gated by invoice payments.
+app.get("/api/projects", async (_req, res) => {
+  try {
+    const data = await getDashboardData();
+    res.json(buildTimeline(data));
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Dev helper: mark an invoice paid so the timeline/dashboard update live, without
+// waiting on a real buyer payment in the sandbox. Mirrors what the webhook does.
+app.post("/api/dev/simulate-payment", (req, res) => {
+  const invoiceId = typeof req.body?.invoiceId === "string" ? req.body.invoiceId : "";
+  if (!invoiceId) {
+    res.status(400).json({ error: "Body must include 'invoiceId'." });
+    return;
+  }
+  paidInvoiceIds.add(invoiceId);
+  res.json({ ok: true, invoiceId });
+});
+
+// PayPal webhook receiver: an INVOICING.INVOICE.PAID event marks the invoice paid.
+// (Signature verification is omitted for the hackathon sandbox demo.)
+app.post("/api/webhooks/paypal", (req, res) => {
+  const event = req.body;
+  const type = event?.event_type as string | undefined;
+  const invoiceId = event?.resource?.invoice?.id ?? event?.resource?.id;
+  if (type?.includes("INVOICE.PAID") && typeof invoiceId === "string") {
+    paidInvoiceIds.add(invoiceId);
+  }
+  res.json({ ok: true });
 });
 
 // Live PayPal invoices for the dashboard grid.
