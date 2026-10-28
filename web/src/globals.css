@@ -67,8 +67,35 @@ body {
   opacity: 0.8;
 }
 
-.flow-mode {
+.flow-nav {
   margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.flow-tab {
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.flow-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.flow-tab.active {
+  background: #fff;
+  color: var(--pp-navy);
+}
+
+.flow-mode {
+  margin-left: 12px;
   padding: 6px 14px;
   border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 8px;

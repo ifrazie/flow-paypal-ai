@@ -13,6 +13,7 @@
     "preview:web": "vite preview web",
     "start": "tsx src/server.ts",
     "agent": "tsx src/cli.ts",
+    "seed": "tsx src/dashboard/seed.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AgStudioProvider, AgStudio } from "ag-studio-react";
-import { AgStudioAiModule, enableStudioDevValidations, type AgStudioMode } from "ag-studio";
+import {
+  AgStudioAiModule,
+  enableStudioDevValidations,
+  type AgStudioApi,
+  type AgStudioMode,
+} from "ag-studio";
 import { buildStudioData, hasData } from "./studio/data";
 import { dashboardReport } from "./studio/initial-report";
 import { agStudioPayPalTheme } from "./studio/theme";
@@ -13,10 +18,25 @@ if (import.meta.env.DEV) {
 
 const LICENSE_KEY = import.meta.env.VITE_AG_STUDIO_LICENSE as string | undefined;
 
+const PAGE_LABELS: Record<string, string> = {
+  revenue: "Revenue",
+  receivables: "Receivables",
+  cash: "Cash",
+  catalogue: "Catalogue",
+};
+
 export function App() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<AgStudioMode>("view");
+  const [activePage, setActivePage] = useState<string>(dashboardReport.selectedPageId ?? "revenue");
+  const apiRef = useRef<AgStudioApi | null>(null);
+
+  const selectPage = (pageId: string) => {
+    setActivePage(pageId);
+    const api = apiRef.current;
+    if (api) api.setState({ ...api.getState(), selectedPageId: pageId });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +60,18 @@ export function App() {
       <header className="flow-header">
         <h1>Flow</h1>
         <span className="tag">PayPal money copilot</span>
+        <nav className="flow-nav">
+          {dashboardReport.pages.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`flow-tab${p.id === activePage ? " active" : ""}`}
+              onClick={() => selectPage(p.id)}
+            >
+              {PAGE_LABELS[p.id] ?? p.id}
+            </button>
+          ))}
+        </nav>
         <button
           className="flow-mode"
           type="button"
@@ -67,6 +99,9 @@ export function App() {
               ai={ai}
               initialState={dashboardReport}
               mode={mode}
+              onApiReady={(event) => {
+                apiRef.current = event.api;
+              }}
             />
           </AgStudioProvider>
         )}
