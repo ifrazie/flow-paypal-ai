@@ -10,8 +10,9 @@ import { draftNudge } from "./nudge.js";
 import { resolvePaypalToken } from "./paypalAuth.js";
 import { getDashboardData } from "./dashboard/data.js";
 import { buildTimeline } from "./dashboard/projects.js";
-import { paidInvoiceIds } from "./dashboard/paidOverrides.js";
 import { runStudioTurn } from "./studioLlm.js";
+import { flowEvents, requestCheck, startPaymentWatcher, type FlowUpdate } from "./paymentWatcher.js";
+import { recordInvoicePayment, verifyWebhookSignature } from "./paypalInvoices.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDist = join(__dirname, "..", "web", "dist");
@@ -127,32 +128,69 @@ app.get("/api/projects", async (_req, res) => {
   }
 });
 
-// Dev helper: mark an invoice paid so the timeline/dashboard update live, without
-// waiting on a real buyer payment in the sandbox. Mirrors what the webhook does.
-app.post("/api/dev/simulate-payment", (req, res) => {
-  const invoiceId = typeof req.body?.invoiceId === "string" ? req.body.invoiceId : "";
-  if (!invoiceId) {
-    res.status(400).json({ error: "Body must include 'invoiceId'." });
-    return;
+// Dashboard data and delivery timeline in one snapshot, built from the same PayPal read.
+app.get("/api/snapshot", async (_req, res) => {
+  try {
+    const dashboard = await getDashboardData();
+    res.json({ dashboard, timeline: buildTimeline(dashboard) });
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
-  paidInvoiceIds.add(invoiceId);
-  res.json({ ok: true, invoiceId });
 });
 
-// PayPal webhook receiver: an INVOICING.INVOICE.PAID event marks the invoice paid.
-// (Signature verification is omitted for the hackathon sandbox demo.)
-app.post("/api/webhooks/paypal", (req, res) => {
-  const event = req.body;
-  const type = event?.event_type as string | undefined;
-  const invoiceId = event?.resource?.invoice?.id ?? event?.resource?.id;
-  if (type?.includes("INVOICE.PAID") && typeof invoiceId === "string") {
-    paidInvoiceIds.add(invoiceId);
+// Live updates: a Server-Sent Events stream. Whenever PayPal reports an invoice change
+// (a customer pays, a payment is recorded, an invoice is sent or cancelled), every open
+// Flow window receives the change plus a fresh dashboard and timeline.
+app.get("/api/events", (_req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write(": connected\n\n");
+  const onUpdate = (update: FlowUpdate) => res.write(`event: update\ndata: ${JSON.stringify(update)}\n\n`);
+  flowEvents.on("update", onUpdate);
+  // Comments keep idle connections open through proxies.
+  const heartbeat = setInterval(() => res.write(": ping\n\n"), 25_000);
+  res.on("close", () => {
+    clearInterval(heartbeat);
+    flowEvents.off("update", onUpdate);
+  });
+});
+
+// Records the outstanding balance as paid in PayPal (the demo stand-in for a customer
+// paying). Flow then sees the change from PayPal, exactly like a real payment.
+app.post("/api/invoices/:id/record-payment", async (req, res) => {
+  try {
+    const result = await recordInvoicePayment(req.params.id);
+    requestCheck();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+// PayPal webhook receiver. The event is only a nudge to re-check PayPal right away; its
+// contents are never trusted, so a forged delivery can't mark anything paid. With
+// PAYPAL_WEBHOOK_ID set, deliveries are also signature-checked with PayPal.
+app.post("/api/webhooks/paypal", async (req, res) => {
   res.json({ ok: true });
+  const webhookId = config.paypal.webhookId;
+  if (webhookId) {
+    const verified = await verifyWebhookSignature(req.headers, req.body, webhookId).catch(() => false);
+    if (!verified) {
+      console.warn("[webhook] ignored a delivery that failed PayPal signature verification");
+      return;
+    }
+  }
+  console.log(`[webhook] ${req.body?.event_type ?? "event"} received; checking PayPal`);
+  requestCheck();
 });
 
 // Live PayPal invoices for the dashboard grid.
-app.get("/api/invoices", async (_req, res) => {  try {
+app.get("/api/invoices", async (_req, res) => {
+  try {
     const invoices = await listInvoices();
     res.json({ invoices });
   } catch (err) {
@@ -234,6 +272,8 @@ app.use((req, res, next) => {
 app.listen(config.server.port, () => {
   console.log(`\n  Flow UI:  http://localhost:${config.server.port}`);
   console.log(
-    `  PayPal:   ${hasPaypalAuth() ? "enabled" : "disabled (set PAYPAL_CLIENT_ID/PAYPAL_SECRET)"}\n`,
+    `  PayPal:   ${hasPaypalAuth() ? "enabled" : "disabled (set PAYPAL_CLIENT_ID/PAYPAL_SECRET)"}`,
   );
+  if (hasPaypalAuth()) startPaymentWatcher();
+  console.log("");
 });

@@ -3,6 +3,7 @@ dist/
 .env
 web/.env
 web/dist/
+seed-emails.md
 *.log
 .DS_Store
 .playwright-mcp/

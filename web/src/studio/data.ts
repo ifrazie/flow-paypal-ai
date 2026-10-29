@@ -22,8 +22,8 @@ const fields = (specs: FieldSpec[]): AgFieldDefinition[] =>
 
 // Foreign key 'table.field' -> primary key 'table.field'.
 const manyToOne = (id: string, source: string, target: string): AgRelationDefinition => {
-  const [sourceTable, sourceField] = source.split('.');
-  const [targetTable, targetField] = target.split('.');
+  const [sourceTable = '', sourceField = ''] = source.split('.');
+  const [targetTable = '', targetField = ''] = target.split('.');
   return {
     id,
     source: { tableId: sourceTable, fieldId: sourceField },

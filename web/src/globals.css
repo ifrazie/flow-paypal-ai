@@ -141,6 +141,41 @@ body {
   min-height: 0;
 }
 
+.flow-pane {
+  height: 100%;
+}
+
+.flow-pane.flow-hidden {
+  display: none;
+}
+
+.flow-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  max-width: 460px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--pp-navy);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  z-index: 2000;
+  animation: flow-toast-in 0.25s ease-out;
+}
+
+@keyframes flow-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .flow-loading,
 .flow-error {
   display: flex;

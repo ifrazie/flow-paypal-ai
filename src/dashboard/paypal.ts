@@ -145,6 +145,8 @@ export type Invoice = {
     currency_code: string;
     invoice_date?: string;
     payment_term?: { term_type?: string; due_date?: string };
+    // `recipient_view_url` is the page where the customer views and pays the invoice.
+    metadata?: { recipient_view_url?: string };
   };
   primary_recipients?: {
     billing_info?: {
@@ -174,9 +176,19 @@ export type Invoice = {
   };
 };
 
+// One invoice as the list endpoint returns it: status and amounts, no line items or payments.
+export type InvoiceSummary = Pick<Invoice, 'id' | 'status' | 'detail' | 'primary_recipients' | 'amount' | 'due_amount'>;
+
+// Every invoice, cancelled ones included. Cheap (one request per 100 invoices), so the
+// payment watcher can poll it to spot status changes.
+export function listInvoiceSummaries(): Promise<InvoiceSummary[]> {
+  return listAll<InvoiceSummary>('/v2/invoicing/invoices?total_required=true', 'items', 100);
+}
+
 // The list omits line items, payments and refunds; the detail endpoint has them.
+// Cancelled invoices are skipped: they are neither revenue nor receivables.
 export async function listInvoices(): Promise<Invoice[]> {
-  const summaries = await listAll<{ id: string }>('/v2/invoicing/invoices?total_required=true', 'items', 100);
+  const summaries = (await listInvoiceSummaries()).filter((i) => i.status !== 'CANCELLED');
   return Promise.all(summaries.map((i) => get<Invoice>(`/v2/invoicing/invoices/${encodeURIComponent(i.id)}`)));
 }
 

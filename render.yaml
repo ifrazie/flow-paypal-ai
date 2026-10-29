@@ -1,12 +1,14 @@
 # Render blueprint — https://render.com/docs/blueprint-spec
-# Deploys the agent's Express server as a web service.
-# Set the secret env vars (marked sync:false) in the Render dashboard; never commit them.
+# Deploys Flow (Express API + the built React app) as one web service.
+# Secret env vars are marked sync:false: set them in Render, never commit them.
 services:
   - type: web
-    name: paypal-ai-agent
+    name: flow-paypal-ai
     runtime: node
-    plan: free
-    buildCommand: npm install
+    plan: starter
+    region: virginia
+    # Builds the React app (web/dist) that Express serves; npm ci installs the dev tools it needs.
+    buildCommand: npm ci && npm run build:web
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
@@ -23,8 +25,14 @@ services:
       # Optional: pin a Bedrock model
       # - key: BEDROCK_MODEL_ID
       #   sync: false
-      # PayPal sandbox app credentials (a fresh MCP token is minted from these)
+      # PayPal sandbox app credentials (Flow mints short-lived tokens from these)
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: PAYPAL_SECRET
+        sync: false
+      # From `npm run webhook:register -- https://<this service>.onrender.com`
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      # AG Studio license, read while the React app builds
+      - key: VITE_AG_STUDIO_LICENSE
         sync: false

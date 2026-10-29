@@ -1,36 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BryntumGantt } from "@bryntum/gantt-react";
+import type { GridColumnConfig } from "@bryntum/gantt";
 import "@bryntum/gantt/stockholm-light.css";
 import "./delivery.css";
+import { money, type GanttTask, type TimelineModel } from "./flowTypes";
 
-interface GanttTask {
-  id: string;
-  name: string;
-  startDate?: string;
-  endDate?: string;
-  duration?: number;
-  milestone?: boolean;
-  manuallyScheduled?: boolean;
-  parentId?: string;
-  expanded?: boolean;
-  percentDone?: number;
-  cls?: string;
-  eventColor?: string;
-  invoiceId?: string;
-  invoiceNumber?: string;
-  amount?: number;
-  currency?: string;
-  paymentStatus?: "paid" | "overdue" | "pending";
-}
-
-interface TimelineModel {
-  tasks: GanttTask[];
-  dependencies: { id: string; from: string; to: string; type?: number }[];
-}
-
-const COLUMNS = [
-  { type: "name", field: "name", text: "Client / phase", width: 260 },
-  { text: "Tranche", field: "invoiceNumber", width: 120 },
+const COLUMNS: GridColumnConfig[] = [
+  { type: "name", field: "name", text: "Client / phase", width: 270 },
+  { text: "Tranche", field: "invoiceNumber", width: 140 },
   {
     text: "Status",
     field: "paymentStatus",
@@ -40,84 +17,110 @@ const COLUMNS = [
   },
 ];
 
-export function DeliveryView() {
-  const [model, setModel] = useState<TimelineModel | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState(0);
-  const [busy, setBusy] = useState(false);
+// Unpaid tranches first by urgency.
+const URGENCY: Record<string, number> = { overdue: 0, partial: 1, pending: 2 };
+
+type TreeTask = Omit<GanttTask, "parentId"> & { children?: TreeTask[] };
+
+/** Nests the flat task list under its client rows, the shape Bryntum's task store expects. */
+function toTree(tasks: GanttTask[]): TreeTask[] {
+  const nodes = new Map<string, TreeTask & { children: TreeTask[] }>();
+  for (const { parentId: _parent, ...task } of tasks) nodes.set(task.id, { ...task, children: [] });
+  const roots: TreeTask[] = [];
+  for (const task of tasks) {
+    const node = nodes.get(task.id)!;
+    const parent = task.parentId ? nodes.get(task.parentId) : undefined;
+    (parent ? parent.children : roots).push(node);
+  }
+  // An empty children array would make a phase look like a collapsible group.
+  for (const node of nodes.values()) if (node.children.length === 0) delete (node as TreeTask).children;
+  return roots;
+}
+
+const projectData = (timeline: TimelineModel) => ({
+  tasksData: toTree(timeline.tasks),
+  dependenciesData: timeline.dependencies,
+});
+
+interface Props {
+  timeline: TimelineModel | null;
+  error: string | null;
+  /** Whether the Delivery view is on screen; the chart is fitted to its dates when first shown. */
+  active: boolean;
+  notify: (message: string) => void;
+}
+
+export function DeliveryView({ timeline, error, active, notify }: Props) {
+  const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<{ invoiceId: string; invoiceNumber: string; text: string } | null>(null);
-  const [draftBusy, setDraftBusy] = useState(false);
-  const [sentNote, setSentNote] = useState<string | null>(null);
+  const [confirmPay, setConfirmPay] = useState<GanttTask | null>(null);
+  const [busy, setBusy] = useState(false);
   const ganttRef = useRef<any>(null);
+  const fitted = useRef(false);
 
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch("/api/projects");
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-      setModel(body as TimelineModel);
-      setVersion((v) => v + 1);
-    } catch (err) {
-      setError(String(err));
-    }
-  }, []);
-
+  // Fit every phase into view the first time the chart is visible. It can't measure itself
+  // while hidden, so give it a moment to lay out after being shown.
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!active || fitted.current || !timeline) return;
+    const timer = setTimeout(() => {
+      const gantt = ganttRef.current?.instance;
+      if (!gantt) return;
+      fitted.current = true;
+      void gantt.zoomToFit({ leftMargin: 40, rightMargin: 60 });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [active, timeline]);
 
-  // Overdue tranches the user can mark paid to see the timeline unblock live.
-  const overdue = useMemo(
-    () => (model?.tasks ?? []).filter((t) => t.milestone && t.paymentStatus === "overdue"),
-    [model],
+  // Bryntum gets its first dataset once; later updates are loaded into the same project
+  // so the view keeps its scroll position instead of re-creating the chart.
+  const initialProject = useRef<ReturnType<typeof projectData> | null>(null);
+  if (timeline && !initialProject.current) initialProject.current = projectData(timeline);
+  const loadedOnce = useRef(false);
+  useEffect(() => {
+    if (!timeline) return;
+    if (!loadedOnce.current) {
+      loadedOnce.current = true;
+      return;
+    }
+    void ganttRef.current?.instance?.project?.loadInlineData(projectData(timeline));
+  }, [timeline]);
+
+  const unpaid = useMemo(
+    () =>
+      (timeline?.tasks ?? [])
+        .filter((t) => t.milestone && t.paymentStatus && t.paymentStatus !== "paid")
+        .sort((a, b) => (URGENCY[a.paymentStatus!] ?? 9) - (URGENCY[b.paymentStatus!] ?? 9)),
+    [timeline],
   );
+  const selected = unpaid.find((t) => t.invoiceId === selectedId) ?? null;
 
-  const simulatePayment = async (invoiceId: string) => {
-    if (!invoiceId) return;
+  // Once the chosen tranche is paid it leaves the list; go back to the prompt.
+  useEffect(() => {
+    if (selectedId && !selected) setSelectedId("");
+  }, [selectedId, selected]);
+
+  const draftReminder = async () => {
+    if (!selected?.invoiceId) return;
     setBusy(true);
     try {
-      await fetch("/api/dev/simulate-payment", {
+      const res = await fetch("/api/collections/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoiceId }),
+        body: JSON.stringify({ invoiceId: selected.invoiceId }),
       });
-      await load();
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      setDraft({ invoiceId: selected.invoiceId, invoiceNumber: selected.invoiceNumber ?? "", text: body.message });
+    } catch (err) {
+      notify(`Could not draft a reminder: ${err}`);
     } finally {
       setBusy(false);
     }
   };
 
-  const selectedOverdue = () => {
-    const sel = document.getElementById("pay-select") as HTMLSelectElement | null;
-    const value = sel?.value;
-    if (!value) return null;
-    const t = overdue.find((o) => o.invoiceId === value);
-    return t ? { invoiceId: value, invoiceNumber: t.invoiceNumber ?? "" } : null;
-  };
-
-  const draftReminder = async () => {
-    const target = selectedOverdue();
-    if (!target) return;
-    setDraftBusy(true);
-    try {
-      const res = await fetch("/api/collections/draft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoiceId: target.invoiceId }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-      setDraft({ invoiceId: target.invoiceId, invoiceNumber: target.invoiceNumber, text: body.message });
-    } catch (err) {
-      alert(`Could not draft a reminder: ${err}`);
-    } finally {
-      setDraftBusy(false);
-    }
-  };
-
   const sendReminder = async () => {
     if (!draft) return;
-    setDraftBusy(true);
+    setBusy(true);
     try {
       const res = await fetch(`/api/invoices/${draft.invoiceId}/remind`, {
         method: "POST",
@@ -126,74 +129,81 @@ export function DeliveryView() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
-      setSentNote(`Reminder sent for ${draft.invoiceNumber}.`);
+      notify(`Reminder sent for ${draft.invoiceNumber}.`);
       setDraft(null);
-      setTimeout(() => setSentNote(null), 4000);
     } catch (err) {
-      alert(`Could not send the reminder: ${err}`);
+      notify(`Could not send the reminder: ${err}`);
     } finally {
-      setDraftBusy(false);
+      setBusy(false);
     }
   };
 
-  const project = useMemo(
-    () => ({ tasksData: model?.tasks ?? [], dependenciesData: model?.dependencies ?? [] }),
-    [model],
-  );
+  const recordPayment = async () => {
+    if (!confirmPay?.invoiceId) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/invoices/${confirmPay.invoiceId}/record-payment`, { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+      notify(`Payment recorded in PayPal for ${confirmPay.invoiceNumber}. Waiting for PayPal to confirm…`);
+      setConfirmPay(null);
+    } catch (err) {
+      notify(`Could not record the payment: ${err}`);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (error) return <div className="flow-error">Could not load timeline: {error}</div>;
-  if (!model) return <div className="flow-loading">Loading delivery timeline…</div>;
+  if (!timeline || !initialProject.current) return <div className="flow-loading">Loading delivery timeline…</div>;
 
   return (
     <div className="delivery">
       <div className="delivery-bar">
         <div className="delivery-hint">
-          Phases are gated by PayPal payments — <span className="pill pill-overdue">overdue</span>{" "}
-          tranches block the next phase. Mark one paid to watch the timeline unblock.
+          A tranche that's past due and not paid in full blocks the next phase. Payments made in PayPal
+          update this timeline automatically.
         </div>
         <div className="delivery-actions">
-          <select id="pay-select" disabled={busy || overdue.length === 0} defaultValue="">
+          <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} disabled={unpaid.length === 0}>
             <option value="" disabled>
-              {overdue.length ? "Select an overdue tranche…" : "No overdue tranches"}
+              {unpaid.length ? "Select an unpaid tranche…" : "Every tranche is paid"}
             </option>
-            {overdue.map((t) => (
+            {unpaid.map((t) => (
               <option key={t.id} value={t.invoiceId}>
-                {t.invoiceNumber} · {t.currency} {t.amount?.toFixed(0)}
+                {t.customer} · {t.invoiceNumber} · {money(t.outstanding, t.currency)} {t.paymentStatus}
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            className="pay-btn ghost"
-            disabled={draftBusy || overdue.length === 0}
-            onClick={draftReminder}
-          >
-            {draftBusy ? "Drafting…" : "Draft reminder ✨"}
+          <button type="button" className="pay-btn ghost" disabled={busy || !selected} onClick={draftReminder}>
+            Draft reminder ✨
           </button>
-          <button
-            type="button"
-            className="pay-btn"
-            disabled={busy}
-            onClick={() => {
-              const sel = document.getElementById("pay-select") as HTMLSelectElement | null;
-              if (sel?.value) simulatePayment(sel.value);
-            }}
+          <a
+            className={`pay-btn ghost${selected?.payerUrl ? "" : " disabled"}`}
+            href={selected?.payerUrl ?? undefined}
+            target="_blank"
+            rel="noreferrer"
+            title="The PayPal page where the customer pays this invoice. Sign in as their sandbox account."
           >
-            Mark paid (simulate)
+            Open as customer ↗
+          </a>
+          <button type="button" className="pay-btn" disabled={busy || !selected} onClick={() => setConfirmPay(selected)}>
+            Record payment
           </button>
         </div>
       </div>
-      {sentNote && <div className="delivery-toast">{sentNote}</div>}
+
       <div className="delivery-gantt">
         <BryntumGantt
-          key={version}
           ref={ganttRef}
-          project={project}
+          project={initialProject.current}
           columns={COLUMNS}
           viewPreset="weekAndMonth"
           rowHeight={40}
           barMargin={8}
           dependencyIdField="id"
+          projectLinesFeature={false}
+          timeRangesFeature={{ showCurrentTimeLine: true }}
         />
       </div>
 
@@ -201,9 +211,7 @@ export function DeliveryView() {
         <div className="modal" onClick={() => setDraft(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-title">AI reminder · {draft.invoiceNumber}</div>
-            <p className="modal-sub">
-              Review and edit the draft. Nothing is sent until you approve.
-            </p>
+            <p className="modal-sub">Review and edit the draft. Nothing is sent until you approve.</p>
             <textarea
               className="modal-text"
               rows={7}
@@ -214,8 +222,32 @@ export function DeliveryView() {
               <button type="button" className="pay-btn ghost" onClick={() => setDraft(null)}>
                 Cancel
               </button>
-              <button type="button" className="pay-btn" disabled={draftBusy} onClick={sendReminder}>
-                {draftBusy ? "Sending…" : "Approve & send reminder"}
+              <button type="button" className="pay-btn" disabled={busy} onClick={sendReminder}>
+                {busy ? "Sending…" : "Approve & send reminder"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmPay && (
+        <div className="modal" onClick={() => setConfirmPay(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">Record a payment in PayPal?</div>
+            <p className="modal-sub">
+              {confirmPay.customer} · {confirmPay.invoiceNumber} · {money(confirmPay.outstanding, confirmPay.currency)}{" "}
+              outstanding
+            </p>
+            <p className="modal-body">
+              PayPal will mark this invoice as paid, the same as if the customer had paid it outside PayPal.
+              Flow updates as soon as PayPal confirms.
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="pay-btn ghost" onClick={() => setConfirmPay(null)}>
+                Cancel
+              </button>
+              <button type="button" className="pay-btn" disabled={busy} onClick={recordPayment}>
+                {busy ? "Recording…" : "Record payment"}
               </button>
             </div>
           </div>

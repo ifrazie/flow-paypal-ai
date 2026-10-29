@@ -15,17 +15,21 @@
 }
 
 .delivery-hint {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   color: var(--pp-muted);
 }
 
 .delivery-actions {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
   align-items: center;
 }
 
 .delivery-actions select {
+  max-width: 340px;
   padding: 7px 10px;
   border: 1px solid var(--pp-border);
   border-radius: 8px;
@@ -41,6 +45,7 @@
   background: var(--pp-blue);
   color: #fff;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -55,14 +60,14 @@
   border: 1px solid var(--pp-blue);
 }
 
-.delivery-toast {
-  margin: 8px 16px 0;
-  padding: 8px 12px;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  color: #065f46;
-  border-radius: 8px;
-  font-size: 13px;
+a.pay-btn {
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+a.pay-btn.disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .modal {
@@ -96,6 +101,12 @@
   margin: 0;
   color: var(--pp-muted);
   font-size: 13px;
+}
+
+.modal-body {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .modal-text {
@@ -135,9 +146,13 @@
   background: #450a0a;
   color: #fecaca;
 }
-.pill-pending {
+.pill-partial {
   background: #78350f;
   color: #fde68a;
+}
+.pill-pending {
+  background: #1e3a5f;
+  color: #bfdbfe;
 }
 
 /* blocked phase emphasis */

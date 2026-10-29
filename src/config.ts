@@ -27,6 +27,9 @@ export const config = {
     sandboxToken: optional("PAYPAL_SANDBOX_TOKEN"),
     mcpUrl: "https://mcp.sandbox.paypal.com/sse",
     oauthUrl: "https://api-m.sandbox.paypal.com/v1/oauth2/token",
+    apiBase: "https://api-m.sandbox.paypal.com",
+    // Set after registering the webhook (npm run webhook:register); enables signature checks.
+    webhookId: optional("PAYPAL_WEBHOOK_ID"),
   },
   server: {
     port: Number(optional("PORT") ?? 3000),

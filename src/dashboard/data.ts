@@ -14,7 +14,6 @@ import {
   type Product,
   type Transaction,
 } from './paypal.js';
-import { paidInvoiceIds } from './paidOverrides.js';
 
 // Flat rows for the Dashboard's AG Studio data sources. Relationships between them:
 //   invoices.customerId        -> customers.id
@@ -68,12 +67,9 @@ function agingBucket(daysOverdue: number) {
 function invoiceRows(invoices: Invoice[], today: string) {
   return invoices.map((inv) => {
     const total = amountOf(inv.amount);
-    // A simulated/webhook payment overrides PayPal's own status so the demo
-    // reflects it instantly across the dashboard and the delivery timeline.
-    const forcedPaid = paidInvoiceIds.has(inv.id);
-    const paid = forcedPaid ? total : amountOf(inv.payments?.paid_amount);
+    const paid = amountOf(inv.payments?.paid_amount);
     const refunded = amountOf(inv.refunds?.refund_amount);
-    const receivable = forcedPaid ? false : RECEIVABLE.has(inv.status);
+    const receivable = RECEIVABLE.has(inv.status);
     const outstanding = receivable ? amountOf(inv.due_amount) : 0;
     const dueDate = inv.detail.payment_term?.due_date ?? inv.detail.invoice_date ?? null;
     const daysOverdue = receivable && dueDate ? Math.max(0, daysBetween(dueDate, today)) : 0;
@@ -86,8 +82,8 @@ function invoiceRows(invoices: Invoice[], today: string) {
       id: inv.id,
       number: inv.detail.invoice_number,
       customerId: customerIdOf(inv),
-      status: forcedPaid ? "Paid" : humanise(inv.status),
-      statusGroup: forcedPaid ? "Paid" : STATUS_GROUP[inv.status],
+      status: humanise(inv.status),
+      statusGroup: STATUS_GROUP[inv.status],
       currency: inv.detail.currency_code,
       paymentTerm: inv.detail.payment_term?.term_type ? humanise(inv.detail.payment_term.term_type) : null,
       invoiceDate: inv.detail.invoice_date ?? null,
@@ -104,6 +100,8 @@ function invoiceRows(invoices: Invoice[], today: string) {
       agingBucket: receivable ? agingBucket(daysOverdue) : null,
       daysToPay: firstPayment && inv.detail.invoice_date ? daysBetween(inv.detail.invoice_date, firstPayment) : null,
       taxTotal: amountOf(inv.amount?.breakdown?.tax_total),
+      // Where the customer pays this invoice in PayPal. Not a Studio field; used by the timeline.
+      payerUrl: inv.detail.metadata?.recipient_view_url ?? null,
     };
   });
 }
