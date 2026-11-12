@@ -11,3 +11,4 @@ seed-emails.md
 # Local-only artifacts, not part of the runnable app
 demo/
 scripts/deploy-render.mjs
+.opencode/
