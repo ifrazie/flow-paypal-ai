@@ -7,3 +7,7 @@ seed-emails.md
 *.log
 .DS_Store
 .playwright-mcp/
+
+# Local-only artifacts, not part of the runnable app
+demo/
+scripts/deploy-render.mjs
