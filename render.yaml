@@ -5,16 +5,22 @@ services:
   - type: web
     name: flow-paypal-ai
     runtime: node
-    plan: starter
+    plan: 0.5c-512mb
     region: virginia
     # Builds the React app (web/dist) that Express serves; npm ci installs the dev tools it needs.
-    buildCommand: npm ci && npm run build:web
+    buildCommand: npm ci --include=dev && npm run build:web
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
         value: "22"
+      - key: DEMO_AUTH_REQUIRED
+        value: "true"
+      - key: DEMO_JUDGE_PASSWORD
+        sync: false
+      - key: DEMO_OPERATOR_PASSWORD
+        sync: false
       # Bedrock (model provider)
       - key: AWS_ACCESS_KEY_ID
         sync: false

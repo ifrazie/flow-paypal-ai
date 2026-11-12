@@ -15,6 +15,7 @@
     "agent": "tsx src/cli.ts",
     "seed": "tsx src/dashboard/seed.ts",
     "webhook:register": "tsx src/dashboard/registerWebhook.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

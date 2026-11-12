@@ -31,6 +31,8 @@ type View = "dashboard" | "delivery";
 
 export function App() {
   const [view, setView] = useState<View>("dashboard");
+  const [role, setRole] = useState<"judge" | "operator" | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
   const [data, setData] = useState<DashboardData | null>(null);
   const [timeline, setTimeline] = useState<TimelineModel | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +70,15 @@ export function App() {
 
   // Initial load, then live updates pushed by the server whenever PayPal reports a change.
   useEffect(() => {
+    fetch("/api/auth/session")
+      .then(async (res) => {
+        if (res.status === 401) { window.location.assign("/login"); return; }
+        if (!res.ok) throw new Error("Could not determine demo access.");
+        const body = await res.json();
+        if (body.role === "judge" || body.role === "operator") setRole(body.role);
+        setAuthRequired(body.authRequired === true);
+      })
+      .catch(() => setError("Could not determine demo access."));
     void loadSnapshot();
     const events = new EventSource("/api/events");
     let connectedBefore = false;
@@ -137,6 +148,7 @@ export function App() {
             </button>
           </>
         )}
+        {authRequired && <form action="/auth/logout" method="post"><button className="flow-mode" type="submit">Sign out</button></form>}
       </header>
 
       {/* Both views stay mounted so switching between them keeps their state. */}
@@ -170,6 +182,7 @@ export function App() {
             timeline={timeline}
             error={timeline ? null : error}
             active={view === "delivery"}
+            role={role}
             notify={notify}
           />
         </div>

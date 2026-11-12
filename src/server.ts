@@ -12,7 +12,9 @@ import { getDashboardData } from "./dashboard/data.js";
 import { buildTimeline } from "./dashboard/projects.js";
 import { runStudioTurn } from "./studioLlm.js";
 import { flowEvents, requestCheck, startPaymentWatcher, type FlowUpdate } from "./paymentWatcher.js";
-import { recordInvoicePayment, verifyWebhookSignature } from "./paypalInvoices.js";
+import { assertInvoiceHasBalance, recordInvoicePayment, verifyWebhookSignature } from "./paypalInvoices.js";
+import { approvalPayload, createApprovalStore, createDemoSecurity, type DemoIdentity } from "./demoSecurity.js";
+import { createWebhookHandler } from "./webhookHandler.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const webDist = join(__dirname, "..", "web", "dist");
@@ -20,7 +22,25 @@ const webDist = join(__dirname, "..", "web", "dist");
 assertBedrockCredentials();
 
 const app = express();
-app.use(express.json());
+const requireDemoAuth = process.env.DEMO_AUTH_REQUIRED === "true" || process.env.RENDER === "true" || process.env.NODE_ENV === "production";
+if (process.env.RENDER === "true") app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.use(express.json({ limit: "1mb" }));
+if (requireDemoAuth) {
+  app.use(createDemoSecurity({
+    judgePassword: process.env.DEMO_JUDGE_PASSWORD ?? "",
+    operatorPassword: process.env.DEMO_OPERATOR_PASSWORD ?? "",
+    secureCookies: process.env.RENDER === "true" || process.env.NODE_ENV === "production",
+  }));
+} else {
+  app.use((_req, res, next) => {
+    res.locals.demoIdentity = { id: "local-operator", role: "operator" } satisfies DemoIdentity;
+    res.locals.isActiveDemoSession = () => true;
+    next();
+  });
+  app.get("/api/auth/session", (_req, res) => res.json({ role: "operator", authRequired: false }));
+}
+const approvals = createApprovalStore();
 // Built React app (Flow dashboard). Legacy vanilla UI stays available under /legacy.
 app.use(express.static(webDist));
 app.use("/legacy", express.static(join(__dirname, "..", "public")));
@@ -81,11 +101,32 @@ app.post("/api/collections/draft", async (req, res) => {
   }
 });
 
-// Collections: send a reminder for an invoice via PayPal (the approved action).
+// Create an approval for a specific operator session, action, invoice, and exact inputs.
+app.post("/api/approvals", (req, res) => {
+  const identity = res.locals.demoIdentity as DemoIdentity;
+  if (identity.role !== "operator") { res.sendStatus(403); return; }
+  const action = req.body?.action;
+  if (action !== "remind" && action !== "record-payment") { res.sendStatus(400); return; }
+  const payload = approvalPayload(action, req.body?.invoiceId, req.body ?? {});
+  if (!payload) { res.status(400).json({ error: "Invalid action details." }); return; }
+  try {
+    res.json({ approvalId: approvals.issue(identity.id, action, payload) });
+  } catch {
+    res.status(503).json({ error: "Too many pending approvals." });
+  }
+});
+
+// Collections: send a reminder only after an operator approves its exact text.
 app.post("/api/invoices/:id/remind", async (req, res) => {
   const id = req.params.id;
-  const note = typeof req.body?.note === "string" ? req.body.note : "Just a friendly reminder about your invoice.";
+  const identity = res.locals.demoIdentity as DemoIdentity;
+  const payload = approvalPayload("remind", id, req.body ?? {});
+  if (identity.role !== "operator" || !payload || !approvals.consume(req.body?.approvalId, identity.id, "remind", payload)) {
+    res.status(403).json({ error: "A valid operator approval is required." }); return;
+  }
+  const note = req.body.note as string;
   try {
+    await assertInvoiceHasBalance(id);
     const token = await resolvePaypalToken();
     if (!token) {
       res.status(503).json({ error: "PayPal not configured." });
@@ -149,10 +190,16 @@ app.get("/api/events", (_req, res) => {
     "X-Accel-Buffering": "no",
   });
   res.write(": connected\n\n");
-  const onUpdate = (update: FlowUpdate) => res.write(`event: update\ndata: ${JSON.stringify(update)}\n\n`);
+  const onUpdate = (update: FlowUpdate) => {
+    if (!res.locals.isActiveDemoSession()) { res.end(); return; }
+    res.write(`event: update\ndata: ${JSON.stringify(update)}\n\n`);
+  };
   flowEvents.on("update", onUpdate);
   // Comments keep idle connections open through proxies.
-  const heartbeat = setInterval(() => res.write(": ping\n\n"), 25_000);
+  const heartbeat = setInterval(() => {
+    if (!res.locals.isActiveDemoSession()) { res.end(); return; }
+    res.write(": ping\n\n");
+  }, 25_000);
   res.on("close", () => {
     clearInterval(heartbeat);
     flowEvents.off("update", onUpdate);
@@ -162,8 +209,13 @@ app.get("/api/events", (_req, res) => {
 // Records the outstanding balance as paid in PayPal (the demo stand-in for a customer
 // paying). Flow then sees the change from PayPal, exactly like a real payment.
 app.post("/api/invoices/:id/record-payment", async (req, res) => {
+  const identity = res.locals.demoIdentity as DemoIdentity;
+  const payload = approvalPayload("record-payment", req.params.id, req.body ?? {});
+  if (identity.role !== "operator" || !payload || !approvals.consume(req.body?.approvalId, identity.id, "record-payment", payload)) {
+    res.status(403).json({ error: "A valid operator approval is required." }); return;
+  }
   try {
-    const result = await recordInvoicePayment(req.params.id);
+    const result = await recordInvoicePayment(req.params.id, { amount: req.body.amount, currency: req.body.currency });
     requestCheck();
     res.json({ ok: true, ...result });
   } catch (err) {
@@ -171,22 +223,13 @@ app.post("/api/invoices/:id/record-payment", async (req, res) => {
   }
 });
 
-// PayPal webhook receiver. The event is only a nudge to re-check PayPal right away; its
-// contents are never trusted, so a forged delivery can't mark anything paid. With
-// PAYPAL_WEBHOOK_ID set, deliveries are also signature-checked with PayPal.
-app.post("/api/webhooks/paypal", async (req, res) => {
-  res.json({ ok: true });
-  const webhookId = config.paypal.webhookId;
-  if (webhookId) {
-    const verified = await verifyWebhookSignature(req.headers, req.body, webhookId).catch(() => false);
-    if (!verified) {
-      console.warn("[webhook] ignored a delivery that failed PayPal signature verification");
-      return;
-    }
-  }
-  console.log(`[webhook] ${req.body?.event_type ?? "event"} received; checking PayPal`);
-  requestCheck();
-});
+// PayPal webhook receiver: verify before acknowledging, and use the event only to
+// trigger a fresh PayPal read. Return 503 on verification failures so PayPal can retry.
+app.post("/api/webhooks/paypal", createWebhookHandler({
+  webhookId: config.paypal.webhookId,
+  verify: verifyWebhookSignature,
+  onVerified: requestCheck,
+}));
 
 // Live PayPal invoices for the dashboard grid.
 app.get("/api/invoices", async (_req, res) => {

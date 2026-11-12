@@ -45,12 +45,13 @@ const projectData = (timeline: TimelineModel) => ({
 interface Props {
   timeline: TimelineModel | null;
   error: string | null;
+  role: "judge" | "operator" | null;
   /** Whether the Delivery view is on screen; the chart is fitted to its dates when first shown. */
   active: boolean;
   notify: (message: string) => void;
 }
 
-export function DeliveryView({ timeline, error, active, notify }: Props) {
+export function DeliveryView({ timeline, error, role, active, notify }: Props) {
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<{ invoiceId: string; invoiceNumber: string; text: string } | null>(null);
   const [confirmPay, setConfirmPay] = useState<GanttTask | null>(null);
@@ -119,13 +120,20 @@ export function DeliveryView({ timeline, error, active, notify }: Props) {
   };
 
   const sendReminder = async () => {
-    if (!draft) return;
+    if (!draft || role !== "operator") return;
     setBusy(true);
     try {
+      const preparation = await fetch("/api/approvals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remind", invoiceId: draft.invoiceId, note: draft.text }),
+      });
+      const prepared = await preparation.json();
+      if (!preparation.ok) throw new Error(prepared.error || "Could not approve reminder.");
       const res = await fetch(`/api/invoices/${draft.invoiceId}/remind`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note: draft.text }),
+        body: JSON.stringify({ note: draft.text, approvalId: prepared.approvalId }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
@@ -139,10 +147,20 @@ export function DeliveryView({ timeline, error, active, notify }: Props) {
   };
 
   const recordPayment = async () => {
-    if (!confirmPay?.invoiceId) return;
+    if (!confirmPay?.invoiceId || confirmPay.outstanding == null || !confirmPay.currency || role !== "operator") return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/invoices/${confirmPay.invoiceId}/record-payment`, { method: "POST" });
+      const details = { invoiceId: confirmPay.invoiceId, amount: confirmPay.outstanding.toFixed(2), currency: confirmPay.currency };
+      const preparation = await fetch("/api/approvals", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "record-payment", ...details }),
+      });
+      const prepared = await preparation.json();
+      if (!preparation.ok) throw new Error(prepared.error || "Could not approve payment.");
+      const res = await fetch(`/api/invoices/${confirmPay.invoiceId}/record-payment`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...details, approvalId: prepared.approvalId }),
+      });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
       notify(`Payment recorded in PayPal for ${confirmPay.invoiceNumber}. Waiting for PayPal to confirm…`);
@@ -178,7 +196,7 @@ export function DeliveryView({ timeline, error, active, notify }: Props) {
           <button type="button" className="pay-btn ghost" disabled={busy || !selected} onClick={draftReminder}>
             Draft reminder ✨
           </button>
-          <a
+          {role === "operator" && <a
             className={`pay-btn ghost${selected?.payerUrl ? "" : " disabled"}`}
             href={selected?.payerUrl ?? undefined}
             target="_blank"
@@ -186,10 +204,10 @@ export function DeliveryView({ timeline, error, active, notify }: Props) {
             title="The PayPal page where the customer pays this invoice. Sign in as their sandbox account."
           >
             Open as customer ↗
-          </a>
-          <button type="button" className="pay-btn" disabled={busy || !selected} onClick={() => setConfirmPay(selected)}>
+          </a>}
+          {role === "operator" && <button type="button" className="pay-btn" disabled={busy || !selected} onClick={() => setConfirmPay(selected)}>
             Record payment
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -222,9 +240,9 @@ export function DeliveryView({ timeline, error, active, notify }: Props) {
               <button type="button" className="pay-btn ghost" onClick={() => setDraft(null)}>
                 Cancel
               </button>
-              <button type="button" className="pay-btn" disabled={busy} onClick={sendReminder}>
+              {role === "operator" && <button type="button" className="pay-btn" disabled={busy} onClick={sendReminder}>
                 {busy ? "Sending…" : "Approve & send reminder"}
-              </button>
+              </button>}
             </div>
           </div>
         </div>

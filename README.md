@@ -167,9 +167,11 @@ session via the SDK's default sliding-window conversation manager. "New chat"
 resets the session. Follow-up messages therefore remember earlier context —
 e.g. approving an action without re-stating its details.
 
-### Approval gate (human-in-the-loop)
+### Legacy chat approval (local only)
 
-Money-moving tools are gated. A `BeforeToolCallEvent` hook (`src/sessions.ts`)
+**Do not expose the legacy chat to the public.** Its tool-name-only approvals can be
+forged by a client and are not a security boundary. The hosted demo disables its chat API.
+For local experimentation, a `BeforeToolCallEvent` hook (`src/sessions.ts`)
 checks each tool name against `isSensitiveTool()` (`src/approval.ts`): anything
 implying a state change — create, capture, pay, send, refund, payout, etc. — is
 **cancelled before it runs** unless the user approved it for the current turn.
@@ -199,8 +201,8 @@ PayPal is the only source of truth: Flow never marks anything paid on its own.
    unblocks the next phase, and a toast says who paid.
 3. **Webhooks** (deployed app) — PayPal calls `/api/webhooks/paypal`, which tells the
    watcher to check right away. The delivery's contents are never trusted, so a forged
-   webhook can't mark anything paid; with `PAYPAL_WEBHOOK_ID` set, deliveries are also
-   signature-checked with PayPal.
+   webhook can't mark anything paid. `PAYPAL_WEBHOOK_ID` is required for signature
+   verification; until configured, the webhook returns 503 and polling remains available.
 
 **Try a real customer payment:** run `npm run seed`, open the link it prints (or pick a
 tranche on **Delivery** and click **Open as customer ↗**), sign in to the PayPal sandbox
@@ -234,8 +236,13 @@ React app) as one Render web service:
    `AWS_SECRET_ACCESS_KEY`, `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, and
    `VITE_AG_STUDIO_LICENSE` (read while the React app builds). `AWS_REGION` defaults to
    `us-east-1`; Render provides `PORT` automatically.
-4. Deploy. The build runs `npm ci && npm run build:web`; the health check path is `/api/health`.
-5. Register the PayPal webhook against the deployed URL, then set the printed
+4. Configure `DEMO_AUTH_REQUIRED=true` and two distinct random passwords (at least 16 characters)
+   as `DEMO_JUDGE_PASSWORD` and `DEMO_OPERATOR_PASSWORD`. Judges can view the dashboard and use
+   AI; only operators can approve reminders and record payments. Share judge credentials privately,
+   never in the repository. The hosted legacy chat API is disabled because its old client-side
+   approval protocol is unsafe. Sessions expire after eight hours or a restart.
+5. Deploy. The build runs `npm ci --include=dev && npm run build:web`; the health check path is `/api/health`.
+6. Register the PayPal webhook against the deployed URL, then set the printed
    `PAYPAL_WEBHOOK_ID` in Render:
 
    ```bash
@@ -247,17 +254,19 @@ Never commit secrets — `.env` is gitignored; configure them in the Render dash
 ## Safety & limits (hackathon notes)
 
 - Sandbox only — point at PayPal **sandbox** credentials, never live.
-- Money-moving tool calls require explicit approval (see the approval gate
-  above); the system prompt also asks the agent to confirm first.
+- Hosted operators approve each reminder or recorded payment; the server binds a
+  short-lived, single-use approval to the exact action and inputs.
 - Sessions live in memory and are keyed only by a client-supplied id — fine for
   a demo, but add real auth + a persistent/expiring session store before any
   multi-user or public use. The per-run approval set assumes one in-flight
   request per session.
-- No auth on the API. Don't expose this server publicly as-is.
+- Authentication and rate limits are in-memory, intended for a single-instance demo,
+  not a production multi-tenant payment application. The judge login still exposes
+  sandbox customer data and permits bounded AI calls; share it only with trusted reviewers.
 
 ## Next steps
 
 - Persist sessions (and conversation history) in a store with expiry.
-- Add authentication and per-user isolation on the API.
+- Add persistent identity, per-user isolation, durable rate limiting and a security review.
 - Tests with a mocked model asserting tool-call arguments, the approval gate,
   and control flow.
