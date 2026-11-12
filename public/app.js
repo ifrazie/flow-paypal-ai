@@ -60,7 +60,7 @@ function addApprovalCard(tool, inputObj) {
 
   approve.addEventListener("click", () => {
     finish("Approved");
-    runTurn(`Approved — please proceed with the "${tool}" action.`, [tool]);
+    runTurn(`Approved. Please proceed with the "${tool}" action.`, [tool]);
   });
   deny.addEventListener("click", () => {
     finish("Denied");
@@ -165,7 +165,7 @@ const money = (p) =>
 function statusRenderer(p) {
   const span = document.createElement("span");
   span.className = `badge badge-${String(p.value || "").toLowerCase()}`;
-  span.textContent = p.value || "—";
+  span.textContent = p.value || "-";
   return span;
 }
 
@@ -187,7 +187,7 @@ function initGrid() {
       document.getElementById("nudge").disabled = !selectedInvoice;
     },
     overlayNoRowsTemplate:
-      "No invoices yet — create one from the Chat tab, then Refresh.",
+      "No invoices yet. Create one from the Chat tab, then Refresh.",
   };
   gridApi = agGrid.createGrid(document.getElementById("grid"), options);
 }
@@ -270,7 +270,7 @@ async function refreshStatus() {
     status.classList.add(data.paypalTools ? "on" : "off");
     status.title = data.paypalTools
       ? "PayPal tools enabled"
-      : "PayPal tools disabled — set PAYPAL_CLIENT_ID/PAYPAL_SECRET";
+      : "PayPal tools disabled. Set PAYPAL_CLIENT_ID/PAYPAL_SECRET";
   } catch {
     status.classList.add("off");
   }

@@ -62,7 +62,7 @@ export function money(value: number | undefined, currency = "USD"): string {
 export function describeChanges(changes: InvoiceChange[]): string | null {
   const paid = changes.find((c) => c.kind === "paid");
   if (paid) {
-    const unblocked = paid.phase && !paid.phase.blocked ? ` — “${paid.phase.name}” unblocked` : "";
+    const unblocked = paid.phase && !paid.phase.blocked ? `, “${paid.phase.name}” unblocked` : "";
     return `💸 ${paid.customer} paid ${money(paid.total, paid.currency)} (${paid.invoiceNumber})${unblocked}`;
   }
   const partial = changes.find((c) => c.kind === "partial");

@@ -3,14 +3,14 @@ import { config } from "./config.js";
 import type { InvoiceRow } from "./paypalRest.js";
 
 const NUDGE_SYSTEM_PROMPT = `You write short, warm, friendly payment reminder messages on behalf of a
-freelancer or small business. Tone: upbeat and gracious, never demanding or threatening — a gentle
+freelancer or small business. Tone: upbeat and gracious, never demanding or threatening, a gentle
 "just a heads-up!" nudge. 2-4 sentences. Address the recipient by name when provided. Mention the
 amount and that it's easy to pay via the PayPal invoice. Do not invent facts beyond what you're given.
 Output only the message text, no preamble or quotes.`;
 
 let nudgeAgent: Agent | null = null;
 
-// A tool-less agent is cheap to build and fast to run — no PayPal MCP process.
+// A tool-less agent is cheap to build and fast to run, with no PayPal MCP process.
 function getNudgeAgent(): Agent {
   if (nudgeAgent) return nudgeAgent;
   nudgeAgent = new Agent({

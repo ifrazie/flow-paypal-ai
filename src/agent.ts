@@ -10,7 +10,7 @@ Rules:
 - Before taking any action that moves money or is hard to undo (creating or capturing
   a payment, issuing a refund, sending an invoice), briefly confirm the details with
   the user first.
-- Never invent order ids, amounts, or customer data — ask or look them up with a tool.
+- Never invent order ids, amounts, or customer data. Ask or look them up with a tool.
 - Keep answers concise and tell the user what you did and what happens next.`;
 
 /**

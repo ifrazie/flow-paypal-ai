@@ -1,121 +1,142 @@
-# PayPal Hackathon Agent
+# Flow
 
-A full-stack AI agent built with the **[Strands Agents](https://strandsagents.com) TypeScript SDK**,
-running on **Amazon Bedrock**, with **PayPal** actions provided as tools over MCP.
+Flow is an AI money copilot for freelancers and small agencies. It turns PayPal
+invoices into a live financial dashboard and a payment-gated delivery timeline,
+so the work unblocks the moment you get paid.
 
-- **Backend** — Express server that runs the agent and streams its output.
-- **Frontend** — a two-view UI (plain HTML/JS, no build step): an agent **Chat**
-  and an **Invoices dashboard** (AG Grid) with an AI "draft a friendly nudge" action.
-- **CLI** — run the same agent from the terminal.
+- **Dashboard:** an analytics view (AG Studio on Amazon Bedrock) with KPIs,
+  collection rate, trends, and breakdowns, plus a natural-language assistant that
+  builds new widgets on request.
+- **Delivery timeline:** a Bryntum Gantt where every client is a project and every
+  work phase is gated by a PayPal payment tranche. A past-due, unpaid tranche turns
+  the next phase red and blocked. When PayPal reports the payment, the phase unblocks
+  live, with no refresh.
+- **AI collections:** drafts friendly, context-aware payment reminders for overdue
+  invoices, which an authorized operator can send through PayPal.
+
+PayPal is the only source of truth. Flow never marks anything paid on its own:
+it reacts to what PayPal reports, picked up through a signed webhook and a polling
+watcher.
+
+## How Flow uses PayPal and AI
+
+### PayPal (free sandbox)
+
+Everything runs against the PayPal sandbox at `https://api-m.sandbox.paypal.com`.
+Flow authenticates with a sandbox app's client ID and secret and mints its own
+short-lived access tokens, so no bearer token needs to be pasted in.
+
+| PayPal API | Role in Flow |
+| :-- | :-- |
+| OAuth 2.0 token (`/v1/oauth2/token`) | Exchanges the sandbox client ID/secret for short-lived access tokens that authorize every other call. |
+| Invoicing v2 (`/v2/invoicing/invoices`) | Core data and actions: list and read invoices for the dashboard, analytics, and watcher; create and send invoices; record payments; send reminders; and cancel or delete invoices when resetting demo data. |
+| Notifications / Webhooks (`/v1/notifications/*`) | Registers a webhook for `INVOICING.INVOICE.*` events and verifies each delivery's signature before acting on it. |
+| Catalog Products (`/v1/catalogs/products`) | Enriches the dashboard catalogue view. |
+| Billing Plans (`/v1/billing/plans`) | Subscription and plan data for the catalogue view. |
+| Reporting (`/v1/reporting/transactions`, `/v1/reporting/balances`) | Used for richer analytics when available. The demo sandbox app returns 403 for these, so Flow degrades gracefully and falls back to invoice-derived data. |
+
+### AI (Amazon Bedrock)
+
+The chosen AI platform is **Amazon Bedrock**, running **Anthropic Claude Sonnet**
+(`global.anthropic.claude-sonnet-4-6` by default, override with `BEDROCK_MODEL_ID`).
+Bedrock appears in three places:
+
+1. **Dashboard assistant.** The browser sends a request to the server, which runs a
+   single Bedrock Converse turn (`@aws-sdk/client-bedrock-runtime`) and streams the
+   result back as AG-UI events, letting a user build charts and widgets from plain
+   language (`src/studioLlm.ts`).
+2. **Collections assistant.** A lightweight, tool-less agent drafts warm payment
+   reminders for overdue invoices (`src/nudge.ts`).
+3. **Agent model provider.** The CLI/legacy agent is built with the Strands Agents
+   SDK and uses Bedrock as its default model provider (`src/agent.ts`).
+
+## Tools and sponsor integrations
+
+- **PayPal Developer Platform (sandbox):** invoices, payments, reminders, catalog,
+  billing, and signed webhooks. The single source of truth for all money state.
+- **Amazon Bedrock (Claude Sonnet):** dashboard widget building and reminder drafting.
+- **AG Studio (AG Grid):** the React analytics dashboard and its AI assistant. The
+  legacy static UI uses AG Grid Community for the invoices grid.
+- **Bryntum Gantt:** the payment-gated delivery timeline.
+- **Render:** hosts the deployed web service (Express API plus the built React app).
+- **Strands Agents SDK:** the agent runtime for the CLI and legacy chat.
+- **Vite + React + TypeScript** on the frontend, **Express + TypeScript** on the backend.
+
+## Project layout
 
 ```
 src/
-  config.ts      env loading + Bedrock credential checks
-  paypalMcp.ts   connects to PayPal's sandbox MCP server (agent tools)
-  paypalAuth.ts  mints a fresh sandbox token from client credentials
-  paypalRest.ts  lists invoices from the PayPal REST API (dashboard data)
-  approval.ts    classifies money-moving tools for the approval gate
-  sessions.ts    per-session agents (memory) + the approval hook
-  agent.ts       builds the Strands agent (Bedrock + PayPal tools)
-  nudge.ts       tool-less agent that drafts friendly payment reminders
-  events.ts      normalizes the agent event stream for the UI
-  server.ts      Express API + static file server
-  cli.ts         terminal entry point
-public/          UI: chat + AG Grid invoices dashboard
+  config.ts          env loading and Bedrock credential checks
+  paypalAuth.ts      mints a sandbox token from client credentials
+  paypalInvoices.ts  invoice actions (record payment, remind) and webhook verification
+  paypalRest.ts      lists invoices for the legacy grid
+  webhookHandler.ts  verifies PayPal webhook signatures before acting
+  paymentWatcher.ts  polls PayPal and broadcasts invoice changes
+  demoSecurity.ts    login, roles, CSRF, rate limits, single-use approvals
+  studioLlm.ts       runs an AG Studio turn against Bedrock Converse
+  nudge.ts           tool-less Bedrock agent that drafts reminders
+  agent.ts           Strands agent (Bedrock plus PayPal MCP tools) for the CLI
+  server.ts          Express API, SSE stream, static file server
+  cli.ts             terminal entry point
+  dashboard/
+    paypal.ts        PayPal REST client (invoices, catalog, billing, reporting)
+    data.ts          shapes PayPal data into dashboard rows
+    projects.ts      builds the Bryntum timeline from invoices
+    seed.ts          re-runnable demo seeding
+    registerWebhook.ts   registers the PayPal webhook
+web/                 React app: AG Studio dashboard and Bryntum delivery timeline
+public/              legacy static UI (chat plus AG Grid invoices), served at /legacy
 ```
 
 ## Prerequisites
 
-- **Node.js 22+**
-- **AWS credentials** with permission to invoke your Bedrock model, and model
-  access enabled in the [Bedrock console](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html).
-- **(Optional) A PayPal sandbox MCP token** to enable PayPal tools.
+- Node.js 22 or newer.
+- AWS credentials with permission to invoke your Bedrock model, and model access
+  enabled in the [Bedrock console](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access.html).
+- A PayPal sandbox app (client ID and secret) from the
+  [PayPal Developer Dashboard](https://developer.paypal.com/).
+- An AG Studio license key for the dashboard (a trial key works).
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env   # then fill in the values (a starter .env is already present)
+cp .env.example .env            # fill in the backend values
+cp web/.env.example web/.env    # add VITE_AG_STUDIO_LICENSE
 ```
 
-Key environment variables (see `.env.example`):
+### Environment variables
+
+Backend (`.env`):
 
 | Variable | Purpose |
-| --- | --- |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | Bedrock model access |
-| `BEDROCK_MODEL_ID` | Optional override; defaults to the SDK's default Bedrock model |
-| `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET` | PayPal sandbox app credentials — the agent mints its own MCP token from these |
-| `PAYPAL_SANDBOX_TOKEN` | Optional pre-minted token; used only if client credentials are absent |
-| `PORT` | Server port (default `3000`) |
+| :-- | :-- |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | Bedrock model access. `AWS_REGION` defaults to `us-east-1`. |
+| `BEDROCK_MODEL_ID` | Optional model override. Defaults to Claude Sonnet. |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET` | Sandbox app credentials. Flow mints its own tokens from these. |
+| `PAYPAL_WEBHOOK_ID` | Set after registering the webhook, to enable signature verification. |
+| `DEMO_AUTH_REQUIRED` | Set to `true` to require login (always on when hosted). |
+| `DEMO_JUDGE_PASSWORD`, `DEMO_OPERATOR_PASSWORD` | Two distinct passwords, at least 16 characters each. |
+| `PORT` | Server port, default `3000`. |
 
-> `.env` is the source of truth: it's loaded with `override: true`, so values
-> in `.env` win over anything already exported in your shell. This avoids a
-> stale `PAYPAL_SANDBOX_TOKEN` in the environment shadowing the real config.
+Frontend (`web/.env`):
 
-### PayPal authentication
+| Variable | Purpose |
+| :-- | :-- |
+| `VITE_AG_STUDIO_LICENSE` | AG Studio license key, read at build time. |
 
-The PayPal MCP server at `https://mcp.sandbox.paypal.com/sse` expects a bearer
-token. Rather than pasting one in (sandbox tokens expire in ~9 hours and are
-easy to get wrong), the app **mints a fresh token at startup** from your
-`PAYPAL_CLIENT_ID` / `PAYPAL_SECRET` via the sandbox OAuth endpoint
-(`src/paypalAuth.ts`). Just set those two values and you're done.
+Never commit secrets. `.env`, `web/.env`, and `seed-emails.md` are gitignored.
 
-If you ever see `Token signature verification failed`, it means a bad/expired
-bearer token reached PayPal. With credential-based minting that shouldn't
-happen; check that `PAYPAL_CLIENT_ID` / `PAYPAL_SECRET` are correct sandbox
-values. You can mint one manually to verify:
-
-```bash
-curl -s https://api-m.sandbox.paypal.com/v1/oauth2/token \
-  -u "$PAYPAL_CLIENT_ID:$PAYPAL_SECRET" \
-  -d "grant_type=client_credentials"
-```
-
-Setting `PAYPAL_SANDBOX_TOKEN` is only a fallback for when client credentials
-aren't available. Without any PayPal credentials the agent still runs, just
-without PayPal tools.
-
-> PayPal tools are wired via `npx mcp-remote`, which bridges the remote SSE
-> endpoint to the agent and handles the auth header (the same setup as
-> `.opencode/opencode.jsonc`). The first run downloads `mcp-remote` via npx.
-> The minted token lasts the server's session; restart to refresh it.
-
-## Run
-
-**Flow (React + AG Studio dashboard, Bryntum delivery timeline):**
-
-```bash
-npm install
-cp web/.env.example web/.env   # add your VITE_AG_STUDIO_LICENSE key
-
-npm run seed                   # reset the demo data in the PayPal sandbox (see below)
-
-# dev: Express API + Vite dev server (two terminals)
-npm run dev:server             # http://localhost:3000  (API)
-npm run dev:web                # http://localhost:5173  (UI, proxies /api)
-
-# or production-style: build the UI and let Express serve it
-npm run build:web
-npm start                      # http://localhost:3000
-```
-
-- **Dashboard** — click **Edit / Ask AI** and ask the assistant e.g. *"Add a column
-  chart of paid invoice revenue by month"*; it builds the widget, powered by Amazon Bedrock.
-- **Delivery** — client projects on a timeline where each phase is gated by a PayPal
-  payment tranche. Draft a reminder, open the invoice as the customer, or record a payment.
-
-The legacy chat/invoices UI remains at `/legacy`.
-
-### Demo data (`npm run seed`)
+## Seed demo data
 
 The seed reads `seed-emails.md` (one sandbox customer email per line) and creates a
-story per customer — an overdue tranche blocking the next phase, a client who pays on
-time, one badly behind, a partial payment, and a new engagement. Invoices are **sent
-with PayPal notifications**, so each sandbox customer can sign in and pay them.
+story per customer: an overdue tranche that blocks the next phase, a client who pays
+on time, one badly behind, a partial payment, and a new engagement. Invoices are sent
+with PayPal notifications, so each sandbox customer can sign in and pay them.
 
-`seed-emails.md` isn't in the repo (it's gitignored). Create it in the project root with
-your own sandbox personal accounts from the PayPal Developer Dashboard (**Testing tools →
-Sandbox accounts**), one per line, optionally followed by a business and contact name:
+`seed-emails.md` is not in the repo. Create it in the project root with your own
+sandbox personal accounts (PayPal Developer Dashboard, Testing tools, Sandbox
+accounts), one per line, optionally followed by a business and contact name:
 
 ```text
 customer-one@personal.example.com | Initech | Mia Rossi
@@ -123,125 +144,98 @@ customer-two@personal.example.com | Soylent Corp | Zoe Haddad
 customer-three@personal.example.com
 ```
 
-`npm run seed -- --check` lists the customers and their stories without touching PayPal.
-
-It's safe to re-run: earlier `FLOW-` invoices are cleared first (recorded payments are
-removed and the invoices cancelled without emails). Invoices a customer actually paid
-through PayPal can't be cancelled, so they stay as payment history. At the end it prints
-the payment link for the live demo.
-
-**Legacy agent UI (chat + invoices grid):**
-
 ```bash
-npm start                      # then open http://localhost:3000/legacy
+npm run seed              # create and send the demo invoices
+npm run seed -- --check   # list the customers and stories without touching PayPal
 ```
 
-**CLI:**
+It is safe to re-run. Earlier `FLOW-` invoices are cleared first (recorded payments
+are removed and the invoices cancelled without emails). Invoices a customer actually
+paid through PayPal stay as payment history. At the end it prints a payment link for
+the live demo.
+
+## Run
+
+```bash
+# dev: Express API plus Vite dev server (two terminals)
+npm run dev:server        # http://localhost:3000  (API)
+npm run dev:web           # http://localhost:5173  (UI, proxies /api)
+
+# production style: build the UI and let Express serve it
+npm run build:web
+npm start                 # http://localhost:3000
+```
+
+- **Dashboard:** click **Edit / Ask AI** and ask, for example, "Add a column chart of
+  paid invoice revenue by month". The assistant builds the widget using Amazon Bedrock.
+- **Delivery:** client projects on a timeline where each phase is gated by a PayPal
+  payment tranche. Draft a reminder, open the invoice as the customer, or record a payment.
+
+The legacy chat and invoices UI remains at `/legacy`.
+
+CLI:
 
 ```bash
 npm run agent -- "Create a $25 sandbox invoice for jane@example.com"
 ```
 
-**Type-check:**
+Type-check and tests:
 
 ```bash
 npm run typecheck
+npm test
 ```
 
-## How it works
+## Roles and approvals
 
-1. `createAgent()` builds a Strands `Agent`. Bedrock is the default model
-   provider, so credentials come straight from the environment.
-2. If PayPal credentials are present, `createPaypalMcpClient()` attaches the
-   PayPal MCP server as a tool provider (using a freshly minted token). The
-   model decides when to call PayPal tools (invoices, orders, refunds, …).
-3. The server streams the agent's events as newline-delimited JSON; the browser
-   renders text as it arrives and shows a note each time a tool is invoked.
+The hosted demo requires login and separates two roles:
 
-### Per-session memory
+- **Judge:** can view the dashboard and timeline and use the AI features. Read only.
+- **Operator:** can also take money actions (record a payment, send a reminder).
 
-Each browser gets a `sessionId` (generated client-side, kept in `localStorage`
-and sent with every request). The server keeps **one agent instance per
-session** (`src/sessions.ts`), so conversation history is scoped to that
-session via the SDK's default sliding-window conversation manager. "New chat"
-resets the session. Follow-up messages therefore remember earlier context —
-e.g. approving an action without re-stating its details.
+Every money action requires a server-side, single-use approval bound to the exact
+action, inputs, and session (`src/demoSecurity.ts`). Client-side approvals are not a
+security boundary, so the legacy chat API is disabled when hosted. The server also
+enforces same-origin checks, rate limits, and signed webhooks.
 
-### Legacy chat approval (local only)
+## Live payments
 
-**Do not expose the legacy chat to the public.** Its tool-name-only approvals can be
-forged by a client and are not a security boundary. The hosted demo disables its chat API.
-For local experimentation, a `BeforeToolCallEvent` hook (`src/sessions.ts`)
-checks each tool name against `isSensitiveTool()` (`src/approval.ts`): anything
-implying a state change — create, capture, pay, send, refund, payout, etc. — is
-**cancelled before it runs** unless the user approved it for the current turn.
-Read-only lookups (get/list, `generate_invoice_number`, …) pass through freely.
+PayPal is the only source of truth; Flow never marks anything paid on its own.
 
-The flow:
+1. **Watcher** (`src/paymentWatcher.ts`) checks PayPal's invoice list every 15 seconds
+   and detects invoices that were paid, partially paid, refunded, sent, or cancelled.
+   This works locally with no public URL.
+2. **Live updates** are pushed to every open Flow window over `GET /api/events`
+   (Server-Sent Events) with a fresh dashboard and timeline. The dashboard updates in
+   place, the timeline unblocks the next phase, and a toast shows who paid.
+3. **Webhooks** (deployed app) let PayPal call `/api/webhooks/paypal`, which asks the
+   watcher to check immediately. The delivery's contents are never trusted, and its
+   signature is verified first, so a forged webhook cannot mark anything paid.
+   `PAYPAL_WEBHOOK_ID` is required for verification; until it is set, the webhook
+   returns 503 and polling remains available.
 
-1. The agent tries a sensitive tool → the hook cancels it and tells the model
-   approval is required. The model describes the action and asks the user.
-2. The UI shows an **Approve / Deny** card with the exact tool input.
-3. **Approve** re-sends the turn with that tool name in `approvals: [...]`, so
-   the hook lets it through and the agent (still holding the details in session
-   memory) executes it. **Deny** cancels it.
-
-To gate more or fewer actions, edit the matchers in `src/approval.ts`.
-
-### Live payments
-
-PayPal is the only source of truth: Flow never marks anything paid on its own.
-
-1. **Watcher** (`src/paymentWatcher.ts`) — checks PayPal's invoice list every 15 seconds
-   and spots invoices that were paid, partially paid, refunded, sent or cancelled. Works
-   locally with no public URL.
-2. **Live updates** — each change is pushed to every open Flow window over
-   `GET /api/events` (Server-Sent Events) with a fresh dashboard and timeline. The
-   dashboard updates in place (the open page and AI-built widgets stay), the timeline
-   unblocks the next phase, and a toast says who paid.
-3. **Webhooks** (deployed app) — PayPal calls `/api/webhooks/paypal`, which tells the
-   watcher to check right away. The delivery's contents are never trusted, so a forged
-   webhook can't mark anything paid. `PAYPAL_WEBHOOK_ID` is required for signature
-   verification; until configured, the webhook returns 503 and polling remains available.
-
-**Try a real customer payment:** run `npm run seed`, open the link it prints (or pick a
-tranche on **Delivery** and click **Open as customer ↗**), sign in to the PayPal sandbox
+To try a real customer payment, run `npm run seed`, open the link it prints (or pick a
+tranche on **Delivery** and click **Open as customer**), sign in to the PayPal sandbox
 as that customer, and pay. Flow updates within seconds. **Record payment** is the
-shortcut: it records the payment in PayPal itself, so it travels the same path.
-
-A tranche that's past due and not paid in full blocks the next phase; a partial payment
+operator shortcut: it records the payment in PayPal itself, so it travels the same path.
+A tranche that is past due and not paid in full blocks the next phase; a partial payment
 keeps it blocked until the balance is paid.
-
-### Legacy invoices grid + AI nudge (AG Grid Community)
-
-The **Invoices** tab renders live PayPal invoices in an [AG Grid](https://www.ag-grid.com/)
-data grid (`GET /api/invoices`, backed by the PayPal Invoicing REST API in
-`src/paypalRest.ts`). Selecting an invoice and clicking **Draft nudge** calls
-`POST /api/nudge`, where a lightweight, tool-less Bedrock agent (`src/nudge.ts`)
-writes a warm, friendly payment reminder you can copy and send — PayPal data +
-AI + a data grid in one view.
-
-> AG Grid Community (free) is loaded from a CDN to keep the no-build static UI.
-> For the sponsor's **Best Use of AG Grid** award, this would be upgraded to
-> **AG Studio** + the Studio Agent Framework in a React frontend.
 
 ## Deploy (Render)
 
 A [`render.yaml`](./render.yaml) blueprint deploys Flow (the Express API plus the built
-React app) as one Render web service:
+React app) as one Render web service.
 
 1. Push this repo to GitHub.
-2. In Render, **New → Blueprint**, pick the repo. Render reads `render.yaml`.
-3. Set the secret env vars when prompted: `AWS_ACCESS_KEY_ID`,
-   `AWS_SECRET_ACCESS_KEY`, `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, and
-   `VITE_AG_STUDIO_LICENSE` (read while the React app builds). `AWS_REGION` defaults to
-   `us-east-1`; Render provides `PORT` automatically.
-4. Configure `DEMO_AUTH_REQUIRED=true` and two distinct random passwords (at least 16 characters)
-   as `DEMO_JUDGE_PASSWORD` and `DEMO_OPERATOR_PASSWORD`. Judges can view the dashboard and use
-   AI; only operators can approve reminders and record payments. Share judge credentials privately,
-   never in the repository. The hosted legacy chat API is disabled because its old client-side
-   approval protocol is unsafe. Sessions expire after eight hours or a restart.
-5. Deploy. The build runs `npm ci --include=dev && npm run build:web`; the health check path is `/api/health`.
+2. In Render, choose **New, Blueprint**, and pick the repo. Render reads `render.yaml`.
+3. Set the secret env vars when prompted: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+   `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, and `VITE_AG_STUDIO_LICENSE`. `AWS_REGION`
+   defaults to `us-east-1`, and Render provides `PORT`.
+4. Set `DEMO_AUTH_REQUIRED=true` and two distinct random passwords (16 characters or
+   more) as `DEMO_JUDGE_PASSWORD` and `DEMO_OPERATOR_PASSWORD`. Share judge credentials
+   privately, never in the repository.
+5. Deploy. The build runs `npm ci --include=dev && npm run build:web`, and the health
+   check path is `/api/health`.
 6. Register the PayPal webhook against the deployed URL, then set the printed
    `PAYPAL_WEBHOOK_ID` in Render:
 
@@ -249,24 +243,17 @@ React app) as one Render web service:
    npm run webhook:register -- https://<your-service>.onrender.com
    ```
 
-Never commit secrets — `.env` is gitignored; configure them in the Render dashboard.
+## Safety and limits
 
-## Safety & limits (hackathon notes)
+This is a sandbox demo, not a production payment application.
 
-- Sandbox only — point at PayPal **sandbox** credentials, never live.
-- Hosted operators approve each reminder or recorded payment; the server binds a
-  short-lived, single-use approval to the exact action and inputs.
-- Sessions live in memory and are keyed only by a client-supplied id — fine for
-  a demo, but add real auth + a persistent/expiring session store before any
-  multi-user or public use. The per-run approval set assumes one in-flight
-  request per session.
-- Authentication and rate limits are in-memory, intended for a single-instance demo,
-  not a production multi-tenant payment application. The judge login still exposes
-  sandbox customer data and permits bounded AI calls; share it only with trusted reviewers.
+- Point at PayPal sandbox credentials only, never live.
+- Authentication, sessions, rate limits, and the approval store are in-memory and
+  intended for a single-instance demo. Add persistent identity, a durable session
+  store, and a security review before any multi-user or public use.
+- The judge login still exposes sandbox customer data and permits bounded AI calls, so
+  share it only with trusted reviewers.
 
-## Next steps
+## License
 
-- Persist sessions (and conversation history) in a store with expiry.
-- Add persistent identity, per-user isolation, durable rate limiting and a security review.
-- Tests with a mocked model asserting tool-call arguments, the approval gate,
-  and control flow.
+Released under the [MIT License](./LICENSE).

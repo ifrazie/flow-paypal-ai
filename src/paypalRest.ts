@@ -48,10 +48,10 @@ interface PaypalInvoice {
 function normalize(inv: PaypalInvoice): InvoiceRow {
   const billing = inv.primary_recipients?.[0]?.billing_info;
   const recipient =
-    billing?.name?.full_name || billing?.name?.given_name || billing?.email_address || "—";
+    billing?.name?.full_name || billing?.name?.given_name || billing?.email_address || "-";
   return {
     id: inv.id ?? "",
-    invoiceNumber: inv.detail?.invoice_number ?? "—",
+    invoiceNumber: inv.detail?.invoice_number ?? "-",
     recipient,
     amount: Number(inv.amount?.value ?? 0),
     currency: inv.amount?.currency_code ?? inv.detail?.currency_code ?? "USD",

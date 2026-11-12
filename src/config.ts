@@ -45,7 +45,7 @@ export function assertBedrockCredentials(): void {
   if (!config.aws.accessKeyId || !config.aws.secretAccessKey) {
     throw new Error(
       "Missing AWS credentials. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY " +
-        "(and AWS_REGION) in your .env — Bedrock is the agent's model provider.",
+        "(and AWS_REGION) in your .env. Bedrock is the agent's model provider.",
     );
   }
   // The AWS SDK reads these from the environment; make sure a region is present.

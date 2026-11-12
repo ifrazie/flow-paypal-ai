@@ -1,4 +1,4 @@
-# Render blueprint — https://render.com/docs/blueprint-spec
+# Render blueprint. See https://render.com/docs/blueprint-spec
 # Deploys Flow (Express API + the built React app) as one web service.
 # Secret env vars are marked sync:false: set them in Render, never commit them.
 services:

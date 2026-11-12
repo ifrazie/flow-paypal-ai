@@ -19,7 +19,7 @@ async function main(): Promise<void> {
       process.stderr.write(`\n[tool: ${event.name}]\n`);
     } else if (event.type === "approval_required") {
       process.stderr.write(
-        `\n[approval required: ${event.tool}] — re-run with this action approved to proceed.\n` +
+        `\n[approval required: ${event.tool}]. Re-run with this action approved to proceed.\n` +
           `  input: ${JSON.stringify(event.input)}\n`,
       );
     } else if (event.type === "error") {

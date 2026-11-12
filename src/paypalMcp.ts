@@ -18,7 +18,7 @@ export async function createPaypalMcpClient(): Promise<McpClient | null> {
   const token = await resolvePaypalToken();
   if (!token) {
     console.warn(
-      "[paypal] No PayPal credentials configured — starting the agent without PayPal tools. " +
+      "[paypal] No PayPal credentials configured. Starting the agent without PayPal tools. " +
         "Set PAYPAL_CLIENT_ID and PAYPAL_SECRET (or PAYPAL_SANDBOX_TOKEN) in your .env.",
     );
     return null;

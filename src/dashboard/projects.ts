@@ -1,7 +1,7 @@
 // Builds a client-delivery timeline (Bryntum Gantt data) from PayPal invoices:
 // each client is a project, each invoice a payment tranche, and each work phase
 // is gated by the previous tranche. A tranche that is past due and not fully paid
-// blocks the next phase — the heart of the "money gates the work" story.
+// blocks the next phase. This is the heart of the "money gates the work" story.
 
 import type { DashboardData } from "./data.js";
 

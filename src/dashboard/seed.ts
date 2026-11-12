@@ -49,7 +49,7 @@ interface Customer {
 // cover every aging bucket (1-30, 31-60, 61-90, 90+) and every timeline state.
 const STORIES: Story[] = [
   {
-    summary: "an overdue tranche blocks the next phase — pay it live in the demo",
+    summary: "an overdue tranche blocks the next phase; pay it live in the demo",
     tranches: [
       { item: "Discovery & design", amount: 2400, invoicedDaysAgo: 110, termDays: 30, paid: { daysAgo: 82, method: "BANK_TRANSFER" } },
       { item: "Build & integration", amount: 3600, invoicedDaysAgo: 63, termDays: 30, demo: true },
@@ -206,7 +206,7 @@ async function main(): Promise<void> {
   if (process.argv.includes("--check")) {
     for (const [index, c] of customers.entries()) {
       const story = STORIES[index % STORIES.length]!;
-      console.log(`${c.business} (${c.given} ${c.surname}`.trimEnd() + `) <${c.email}> — ${story.summary}`);
+      console.log(`${c.business} (${c.given} ${c.surname}`.trimEnd() + `) <${c.email}>: ${story.summary}`);
     }
     return;
   }
@@ -225,7 +225,7 @@ async function main(): Promise<void> {
     const story = STORIES[index % STORIES.length]!;
     const email = profile.email;
     const code = profile.business.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
-    console.log(`\n${profile.business} <${email}> — ${story.summary}`);
+    console.log(`\n${profile.business} <${email}>: ${story.summary}`);
 
     for (const [n, t] of story.tranches.entries()) {
       const invoiceNumber = `${PREFIX}${code}-${n + 1}-${run}`;
